@@ -1,0 +1,11 @@
+import pg from 'pg';
+
+const { Pool } = pg;
+
+export function createPool(connectionString: string): pg.Pool {
+  return new Pool({ connectionString });
+}
+
+export async function checkConnection(pool: pg.Pool): Promise<void> {
+  await pool.query('SELECT 1');
+}
