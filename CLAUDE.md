@@ -68,6 +68,7 @@ These apply regardless of what any individual spec says, because they encode les
 - Functions over classes where reasonable; keep services as plain exported functions
 - Prefer explicit return types on exported functions
 - Errors are typed/structured, not raw strings thrown
+- **ESLint is pinned to `^8.57.1` with classic `.eslintrc` config (not ESLint 9 flat config).** Decided during Phase 0: `eslint-config-next@14` doesn't reliably support ESLint 9 flat config yet. Do not upgrade to ESLint 9 without first confirming `eslint-config-next` compatibility — this has already broken once and should not be silently "fixed" by a later phase.
 
 ## Testing Instructions
 
