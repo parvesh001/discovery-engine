@@ -11,7 +11,7 @@ Combines structured SQL filtering (exact, never approximate) with pgvector seman
 ## Functional Requirements
 
 1. `retrieveCandidates(intent: QueryIntent): Promise<RankedCandidate[]>` in `/backend/src/services/search/retrieval.ts`.
-   - Generate an embedding for `intent.semantic_query` using the same embedding function from Phase 2.
+   - Generate an embedding for `intent.semantic_query`. **Cannot be a naive reuse of Phase 2's `generateEmbedding` as-is**: that function sends `input_type: 'document'` (correct for indexing listings), but Voyage's asymmetric-retrieval convention requires the query side to send `input_type: 'query'` instead, so both sides of retrieval stay consistent. This phase needs to either add an `inputType` parameter to `generateEmbedding` or introduce a sibling query-embedding function — decide and implement here, not by copying the document-mode call.
    - Build a SQL query that:
      - Applies each non-null field in `intent.filters` as a `WHERE` clause against `extracted_attributes` (JSONB) or the relevant structured column.
      - Orders remaining rows by cosine distance (pgvector `<=>` operator) between the query embedding and each listing's `embedding` column.
