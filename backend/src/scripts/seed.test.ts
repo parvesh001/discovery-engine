@@ -41,7 +41,9 @@ describe('seedDatabase', () => {
   });
 
   it('accepts an injected listing set for isolated testing', async () => {
-    const count = await seedDatabase(pool, [seedListings[0]]);
+    const [firstListing] = seedListings;
+    if (!firstListing) throw new Error('seedListings is empty — cannot run this test');
+    const count = await seedDatabase(pool, [firstListing]);
 
     expect(count).toBe(1);
     const result = await pool.query('SELECT count(*) FROM listings');
