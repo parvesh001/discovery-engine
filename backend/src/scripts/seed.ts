@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import type pg from 'pg';
 import { loadEnv, type Env } from '../env.js';
 import { createPool } from '../db.js';
@@ -61,6 +60,7 @@ export async function seedDatabase(pool: pg.Pool, listings: SeedListing[] = seed
 }
 
 async function main(): Promise<void> {
+  await import('dotenv/config');
   const env = loadEnvOrExit();
   const pool = createPool(env.DATABASE_URL);
 

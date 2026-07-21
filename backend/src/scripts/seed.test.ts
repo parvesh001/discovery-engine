@@ -2,12 +2,10 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import pg from 'pg';
 import { seedDatabase } from './seed.js';
 import { seedListings } from './seed-data.js';
-
-const TEST_DATABASE_URL =
-  process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/discovery_engine';
+import { getTestDatabaseUrl } from '../test/testDb.js';
 
 describe('seedDatabase', () => {
-  const pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
+  const pool = new pg.Pool({ connectionString: getTestDatabaseUrl() });
 
   afterAll(async () => {
     await pool.end();

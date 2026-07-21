@@ -2,13 +2,11 @@ import { afterAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import pg from 'pg';
 import { createApp } from '../app.js';
-
-const TEST_DATABASE_URL =
-  process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/discovery_engine';
+import { getTestDatabaseUrl } from '../test/testDb.js';
 
 describe('GET /health', () => {
   describe('when the database is reachable', () => {
-    const pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
+    const pool = new pg.Pool({ connectionString: getTestDatabaseUrl() });
     const app = createApp(pool);
 
     afterAll(async () => {
