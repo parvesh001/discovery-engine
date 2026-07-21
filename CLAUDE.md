@@ -45,9 +45,11 @@ AI-powered semantic search/discovery engine for a rental listings marketplace (d
 
 - `docker compose up -d` — start local Postgres (pgvector enabled)
 - `pnpm --filter backend dev` — run backend in watch mode
+- `pnpm --filter backend run build` — **required part of the verification loop, not optional.** Runs the real `tsc -p tsconfig.json` compile. `pnpm lint` (ESLint, non-type-checked rules) and `pnpm test` (Vitest, esbuild transpile with no type-checking) can both pass while `tsc` still fails — confirmed in Phase 2, where a `noUncheckedIndexedAccess` violation sat undetected through both. Always run all three (`lint`, `test`, `build`) before considering any phase done, never just the first two.
 - `pnpm --filter frontend dev` — run frontend
 - `pnpm --filter backend test` — run backend test suite
 - `pnpm --filter backend run seed` — seed dummy data
+- `pnpm --filter backend run ingest` — run the ingestion pipeline (Phase 2+)
 - `pnpm --filter backend run eval` — run the eval harness (Phase 8+)
 - `pnpm lint` — lint all workspaces
 
@@ -75,6 +77,8 @@ These apply regardless of what any individual spec says, because they encode les
 - Unit tests for pure logic (extraction validation, query parsing helpers)
 - Integration tests for anything touching the database or the Claude API (use a test DB; mock or record/replay LLM calls where practical to avoid burning API budget on every test run)
 - Every phase's spec has an explicit "Acceptance Criteria" section — treat these as the definition of done, not a suggestion
+- **Test and dev databases must never resolve to the same connection, and this must fail loudly, not silently fall back.** (Learned the hard way in Phase 1: a `TEST_DATABASE_URL` that fell back to `DATABASE_URL` when unset silently wiped dev data on every test run.) Use `getTestDatabaseUrl()` in `/backend/src/test/testDb.ts`, which throws if `TEST_DATABASE_URL` is unset or identical to `DATABASE_URL` — never bypass this with a hardcoded or defaulted connection string.
+- Any script with CLI-only side effects (e.g. loading `.env`, connecting to a DB, calling `process.exit`) must gate those behind an entrypoint check (`import.meta.url` check or equivalent) so importing the script's functions for testing never triggers them.
 
 ## Git / Repository Etiquette
 
