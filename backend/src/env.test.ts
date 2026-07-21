@@ -4,6 +4,7 @@ import { loadEnv } from './env.js';
 const validEnv = {
   DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/discovery_engine',
   ANTHROPIC_API_KEY: 'sk-ant-test-key',
+  VOYAGE_API_KEY: 'pa-test-key',
   PORT: '4000',
 };
 
@@ -13,6 +14,7 @@ describe('loadEnv', () => {
     expect(env).toEqual({
       DATABASE_URL: validEnv.DATABASE_URL,
       ANTHROPIC_API_KEY: validEnv.ANTHROPIC_API_KEY,
+      VOYAGE_API_KEY: validEnv.VOYAGE_API_KEY,
       PORT: 4000,
     });
   });
@@ -25,6 +27,11 @@ describe('loadEnv', () => {
   it('throws naming ANTHROPIC_API_KEY when it is missing', () => {
     const { ANTHROPIC_API_KEY: _ANTHROPIC_API_KEY, ...rest } = validEnv;
     expect(() => loadEnv(rest)).toThrow(/ANTHROPIC_API_KEY/);
+  });
+
+  it('throws naming VOYAGE_API_KEY when it is missing', () => {
+    const { VOYAGE_API_KEY: _VOYAGE_API_KEY, ...rest } = validEnv;
+    expect(() => loadEnv(rest)).toThrow(/VOYAGE_API_KEY/);
   });
 
   it('throws naming PORT when it is missing', () => {
