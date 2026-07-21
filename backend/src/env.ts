@@ -8,6 +8,9 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: z
     .string({ required_error: 'ANTHROPIC_API_KEY is required' })
     .min(1, 'ANTHROPIC_API_KEY must not be empty'),
+  VOYAGE_API_KEY: z
+    .string({ required_error: 'VOYAGE_API_KEY is required' })
+    .min(1, 'VOYAGE_API_KEY must not be empty'),
   PORT: z
     .string({ required_error: 'PORT is required' })
     .min(1, 'PORT must not be empty')

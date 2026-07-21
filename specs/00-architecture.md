@@ -42,6 +42,7 @@ Ingestion-time flow (per listing, on create/update): `raw listing → attribute 
 | Backend | Node.js + Express + TS, isolated service | Independently scalable, mirrors real client infra |
 | Database | PostgreSQL + pgvector | One DB for structured + vector data, production-viable with HNSW |
 | LLM | Claude API — Haiku (extraction/query understanding), Sonnet (re-ranking) | Cost-tiered by task frequency vs. reasoning need |
+| Embeddings | Voyage AI — `voyage-4` (`output_dimension: 1024`) | Anthropic's recommended embeddings partner (Claude has no native embeddings endpoint). `input_type: 'document'` at ingestion, `input_type: 'query'` at retrieval time (Phase 4) — see `05-hybrid-retrieval.md` |
 | Queue/Cache | BullMQ + Redis (Phase 9+) | Async ingestion, query caching |
 | Observability | Langfuse (self-hosted) | Full LLM call tracing |
 | Deployment | Vercel (frontend) + Render (backend + managed Postgres) | Confirmed. Realistic prod topology, cheap tiers sufficient |
@@ -63,7 +64,7 @@ CREATE TABLE listings (
   longitude NUMERIC,
   created_at TIMESTAMPTZ DEFAULT now(),
   extracted_attributes JSONB,
-  embedding VECTOR(1536),
+  embedding VECTOR(1024),
   ingestion_status TEXT DEFAULT 'pending',  -- pending | processed | failed
   ingested_at TIMESTAMPTZ
 );
