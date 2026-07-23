@@ -4,7 +4,7 @@ import { understandQuery } from '../services/search/queryUnderstanding.js';
 // Manual review script (spec 04, item 2) — not a test suite. Prints extracted intent for
 // each query so a human can eyeball whether the model's judgment calls (esp. never
 // hallucinating max_price from soft terms like "cheap") match the spec's expectations.
-const TEST_QUERIES: string[] = [
+export const TEST_QUERIES: string[] = [
   // Explicit hard constraints
   'pet friendly apartment',
   '3 bedroom house',

@@ -81,7 +81,7 @@ describe('generateEmbedding', () => {
     });
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    const embedding = await generateEmbedding('some text');
+    const embedding = await generateEmbedding('some text', 'document');
 
     expect(embedding).toHaveLength(1024);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -94,7 +94,7 @@ describe('generateEmbedding', () => {
     });
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    await generateEmbedding('some text');
+    await generateEmbedding('some text', 'document');
 
     const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://api.voyageai.com/v1/embeddings');
@@ -107,6 +107,20 @@ describe('generateEmbedding', () => {
     });
   });
 
+  it('sends input_type=query when embedding a search query', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ embedding: [1, 2, 3] }] }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await generateEmbedding('cabin with a mountain view', 'query');
+
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(options.body as string);
+    expect(body.input_type).toBe('query');
+  });
+
   it('retries once on a 500 and succeeds on the second attempt', async () => {
     const fetchMock = vi
       .fn()
@@ -114,7 +128,7 @@ describe('generateEmbedding', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({ data: [{ embedding: [1, 2, 3] }] }) });
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    const embedding = await generateEmbedding('some text');
+    const embedding = await generateEmbedding('some text', 'document');
 
     expect(embedding).toEqual([1, 2, 3]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -124,7 +138,7 @@ describe('generateEmbedding', () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'server error' });
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    await expect(generateEmbedding('some text')).rejects.toBeInstanceOf(EmbeddingError);
+    await expect(generateEmbedding('some text', 'document')).rejects.toBeInstanceOf(EmbeddingError);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -132,7 +146,7 @@ describe('generateEmbedding', () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 400, text: async () => 'bad request' });
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    await expect(generateEmbedding('some text')).rejects.toBeInstanceOf(EmbeddingError);
+    await expect(generateEmbedding('some text', 'document')).rejects.toBeInstanceOf(EmbeddingError);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
@@ -159,7 +173,11 @@ describe('generateEmbedding rate limiting', () => {
     });
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    const calls = Promise.all([generateEmbedding('a'), generateEmbedding('b'), generateEmbedding('c')]);
+    const calls = Promise.all([
+      generateEmbedding('a', 'document'),
+      generateEmbedding('b', 'document'),
+      generateEmbedding('c', 'document'),
+    ]);
     await vi.runAllTimersAsync();
     await calls;
 

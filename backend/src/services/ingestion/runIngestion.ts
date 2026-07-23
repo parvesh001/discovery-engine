@@ -29,7 +29,7 @@ async function ingestListing(pool: pg.Pool, listing: PendingListing): Promise<'p
   try {
     const attributes = await extractAttributes(listing.raw_description);
     const embeddingInput = buildEmbeddingInput(listing.title, listing.raw_description, attributes);
-    const embedding = await generateEmbedding(embeddingInput);
+    const embedding = await generateEmbedding(embeddingInput, 'document');
     const embeddingLiteral = `[${embedding.join(',')}]`;
 
     await pool.query(
