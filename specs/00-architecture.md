@@ -98,7 +98,7 @@ CREATE TABLE search_logs (
 | 0 | `01-scaffolding.md` | — |
 | 1 | `02-dummy-data.md` | 0 |
 | 2 | `03-ingestion-pipeline.md` | 0, 1 |
-| 3 | `04-query-understanding.md` | 0 |
+| 3 | `04-query-understanding.md` | 0, 2 |
 | 4 | `05-hybrid-retrieval.md` | 2, 3 |
 | 5 | `06-reranking.md` | 4 |
 | 6 | `07-backend-api.md` | 3, 4, 5 |

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { callClaude } from '../llm/client.js';
+import { stripCodeFences } from '../llm/jsonResponse.js';
 
 export type ExtractedAttributes = {
   property_type: string;
@@ -64,12 +65,6 @@ Validation error:
 ${parseError}
 
 Return ONLY corrected valid JSON matching the required shape, for the same listing description above.`;
-}
-
-function stripCodeFences(text: string): string {
-  const trimmed = text.trim();
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
-  return fenced?.[1] ?? trimmed;
 }
 
 function parseAndValidate(responseText: string): { data: ExtractedAttributes } | { error: string } {

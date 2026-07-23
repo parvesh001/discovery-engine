@@ -16,7 +16,8 @@
     "migrate:down": "node-pg-migrate down",
     "migrate:create": "node-pg-migrate create -j sql --",
     "seed": "tsx src/scripts/seed.ts",
-    "ingest": "tsx src/scripts/ingest.ts"
+    "ingest": "tsx src/scripts/ingest.ts",
+    "test:query-understanding": "tsx src/scripts/testQueryUnderstanding.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.4",
