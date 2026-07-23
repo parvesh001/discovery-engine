@@ -76,7 +76,7 @@ function isTransientStatus(status: number): boolean {
   return status >= 500 || status === 429;
 }
 
-async function callVoyageOnce(text: string, timeoutMs: number): Promise<number[]> {
+async function callVoyageOnce(text: string, inputType: 'document' | 'query', timeoutMs: number): Promise<number[]> {
   await reserveSlot();
 
   const controller = new AbortController();
@@ -93,7 +93,7 @@ async function callVoyageOnce(text: string, timeoutMs: number): Promise<number[]
         model: EMBEDDING_MODEL,
         input: [text],
         output_dimension: EMBEDDING_DIMENSION,
-        input_type: 'document',
+        input_type: inputType,
       }),
       signal: controller.signal,
     });
@@ -130,9 +130,19 @@ function isTransientError(error: unknown): boolean {
   return true;
 }
 
-export async function generateEmbedding(text: string, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<number[]> {
+/**
+ * `inputType` is required, not defaulted, so every call site must say explicitly which
+ * side of Voyage's asymmetric-retrieval convention it's on: 'document' when indexing a
+ * listing (Phase 2), 'query' when embedding a search query (Phase 4). Silently defaulting
+ * to one would risk a future caller reusing the wrong mode without noticing.
+ */
+export async function generateEmbedding(
+  text: string,
+  inputType: 'document' | 'query',
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<number[]> {
   try {
-    const embedding = await callVoyageOnce(text, timeoutMs);
+    const embedding = await callVoyageOnce(text, inputType, timeoutMs);
     console.log('[embeddings] voyage call succeeded');
     return embedding;
   } catch (firstError) {
@@ -143,7 +153,7 @@ export async function generateEmbedding(text: string, timeoutMs: number = DEFAUL
     }
 
     try {
-      const embedding = await callVoyageOnce(text, timeoutMs);
+      const embedding = await callVoyageOnce(text, inputType, timeoutMs);
       console.log('[embeddings] voyage call succeeded on retry');
       return embedding;
     } catch (secondError) {
