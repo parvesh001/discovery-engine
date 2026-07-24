@@ -1,38 +1,10 @@
 import type { ExtractedAttributes } from './extraction.js';
+import { reserveSlot } from '../voyage/rateLimiter.js';
 
 const VOYAGE_EMBEDDINGS_URL = 'https://api.voyageai.com/v1/embeddings';
 const EMBEDDING_MODEL = 'voyage-4';
 const EMBEDDING_DIMENSION = 1024;
 const DEFAULT_TIMEOUT_MS = 15_000;
-
-// Voyage's default free tier (no payment method on file) caps requests at 3/minute
-// regardless of our own ingestion concurrency, so every call — across all concurrent
-// listings, including retries — is serialized through a single global slot queue
-// spaced to stay under that ceiling. Override via VOYAGE_MAX_REQUESTS_PER_MINUTE once
-// a payment method raises the account's real limit; no code change needed.
-function getMinIntervalMs(): number {
-  const maxRequestsPerMinute = Number(process.env.VOYAGE_MAX_REQUESTS_PER_MINUTE ?? 3);
-  return Math.ceil(60_000 / maxRequestsPerMinute);
-}
-
-let nextSlotAt = 0;
-let slotChain: Promise<void> = Promise.resolve();
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function reserveSlot(): Promise<void> {
-  const reserved = slotChain.then(async () => {
-    const waitMs = Math.max(0, nextSlotAt - Date.now());
-    if (waitMs > 0) {
-      await sleep(waitMs);
-    }
-    nextSlotAt = Date.now() + getMinIntervalMs();
-  });
-  slotChain = reserved;
-  return reserved;
-}
 
 export class EmbeddingError extends Error {
   constructor(message: string) {

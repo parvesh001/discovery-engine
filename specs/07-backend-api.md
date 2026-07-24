@@ -27,7 +27,7 @@ Wires the pipeline into a single endpoint the frontend can call, with graceful d
 POST /api/search
 Request:  { query: string }
 Response: {
-  results: Array<Listing & { reasoning?: string }>,
+  results: Array<Listing & { relevanceScore: number | null }>,
   degraded: boolean,
   filtersRelaxed: boolean,
   timing: { understanding_ms: number, retrieval_ms: number, rerank_ms: number, total_ms: number }

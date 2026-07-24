@@ -18,7 +18,8 @@
     "seed": "tsx src/scripts/seed.ts",
     "ingest": "tsx src/scripts/ingest.ts",
     "test:query-understanding": "tsx src/scripts/testQueryUnderstanding.ts",
-    "test:retrieval": "tsx src/scripts/testRetrieval.ts"
+    "test:retrieval": "tsx src/scripts/testRetrieval.ts",
+    "test:rerank": "tsx src/scripts/testRerank.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.4",

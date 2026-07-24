@@ -41,8 +41,9 @@ Ingestion-time flow (per listing, on create/update): `raw listing → attribute 
 | Frontend | Next.js (App Router), TS, Tailwind | Matches existing skillset |
 | Backend | Node.js + Express + TS, isolated service | Independently scalable, mirrors real client infra |
 | Database | PostgreSQL + pgvector | One DB for structured + vector data, production-viable with HNSW |
-| LLM | Claude API — Haiku (extraction/query understanding), Sonnet (re-ranking) | Cost-tiered by task frequency vs. reasoning need |
-| Embeddings | Voyage AI — `voyage-4` (`output_dimension: 1024`) | Anthropic's recommended embeddings partner (Claude has no native embeddings endpoint). `input_type: 'document'` at ingestion, `input_type: 'query'` at retrieval time (Phase 4) — see `05-hybrid-retrieval.md` |
+| Embeddings | Voyage AI — `voyage-4`, 1024 dims, `input_type: document`/`query` | Anthropic-recommended embeddings partner; asymmetric input_type per Voyage's retrieval convention (see `specs/03-ingestion-pipeline.md`, `specs/05-hybrid-retrieval.md`) |
+| LLM | Claude API — Haiku (extraction/query understanding) | Cost-tiered: cheap/fast model for high-frequency small tasks |
+| Reranker | Voyage AI — `rerank-2.5` (re-ranking, Phase 5) | Cross-encoder reranker, ~600ms latency vs. ~30-50s for a generative-model approach tried and rejected during Phase 5 (see `specs/06-reranking.md`); no generated reasoning text, score-only |
 | Queue/Cache | BullMQ + Redis (Phase 9+) | Async ingestion, query caching |
 | Observability | Langfuse (self-hosted) | Full LLM call tracing |
 | Deployment | Vercel (frontend) + Render (backend + managed Postgres) | Confirmed. Realistic prod topology, cheap tiers sufficient |
@@ -64,7 +65,7 @@ CREATE TABLE listings (
   longitude NUMERIC,
   created_at TIMESTAMPTZ DEFAULT now(),
   extracted_attributes JSONB,
-  embedding VECTOR(1024),
+  embedding VECTOR(1024), -- Voyage voyage-4, output_dimension: 1024 (see Tech Stack; corrected from an initial 1536 during Phase 2)
   ingestion_status TEXT DEFAULT 'pending',  -- pending | processed | failed
   ingested_at TIMESTAMPTZ
 );
@@ -98,7 +99,7 @@ CREATE TABLE search_logs (
 | 0 | `01-scaffolding.md` | — |
 | 1 | `02-dummy-data.md` | 0 |
 | 2 | `03-ingestion-pipeline.md` | 0, 1 |
-| 3 | `04-query-understanding.md` | 0, 2 |
+| 3 | `04-query-understanding.md` | 0 |
 | 4 | `05-hybrid-retrieval.md` | 2, 3 |
 | 5 | `06-reranking.md` | 4 |
 | 6 | `07-backend-api.md` | 3, 4, 5 |
