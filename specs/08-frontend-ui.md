@@ -13,9 +13,9 @@ The UI needs to make the pipeline's value obvious at a glance — this project d
 1. Search page at `/frontend/app/search/`.
    - Text input + submit action calling `POST /api/search` on the backend.
    - While in flight: sequential loading states reflecting pipeline stages ("Understanding your search..." → "Finding matches..." → "Ranking results..."). If real per-stage timing isn't streamed from the backend, simulate reasonable stage transitions with short timed delays — document this as a simplification, not a hidden inaccuracy.
-   - Results rendered as cards: title, price/night, bedrooms, location, a short list of matched attributes (from `extracted_attributes`), and the `reasoning` string if present (per Phase 5/6).
+   - Results rendered as cards: title, price/night, bedrooms, location, a short list of matched attributes (from `extracted_attributes`). Note: Phase 5 uses Voyage `rerank-2.5`, which returns a relevance score, not a generated explanation — there is no per-result reasoning text to display (deliberate speed-over-explanation tradeoff, see `specs/06-reranking.md`). Do not build UI expecting a `reasoning` field; it doesn't exist. `relevanceScore` is nullable (candidates beyond Phase 5's 20-item cap are appended unscored) — omit any score indicator for `null`, never display it as `0`.
    - If the response has `filtersRelaxed: true`, show a visible note that filters were relaxed because they were too narrow.
-   - If `degraded: true`, do not show a scary error — the UI should look normal (re-ranking reasoning may simply be absent).
+   - If `degraded: true`, do not show a scary error — the UI should look normal (re-ranking simply fell back to similarity-only order).
 2. Naive comparison endpoint: `GET /api/search/naive?q=` on the backend — a trivial `ILIKE` query against `title` + `raw_description`, no AI involved. Add this backend endpoint as part of this phase (small, explicitly scoped here since it only exists to support the UI comparison).
 3. A toggle or side-by-side view comparing naive results vs. AI pipeline results for the same query.
 4. Tailwind styling, responsive layout, semantic HTML with appropriate ARIA labels on interactive elements. Consult `frontend-design` conventions for visual polish — avoid a generic, unstyled-default look.

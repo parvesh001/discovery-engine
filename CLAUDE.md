@@ -89,4 +89,5 @@ These apply regardless of what any individual spec says, because they encode les
 ## Environment
 
 - Requires `.env` with `DATABASE_URL`, `ANTHROPIC_API_KEY`, `PORT` — server must fail fast with a clear message if any are missing (Phase 0 requirement)
+- `VOYAGE_MAX_REQUESTS_PER_MINUTE` — must reflect the Voyage account's actual current tier, not an assumed default. (Learned in Phase 5: a stale free-tier-assumption default cost ~20s/search for an entire phase's worth of manual testing after the account had already been upgraded to Tier 1. Rate/tier-dependent config for any external provider should be an explicit env var, never hardcoded — and worth a quick sanity check against the provider's dashboard whenever a "why is this suddenly slow/limited" question comes up.)
 - Never commit `.env` — `.env.example` documents required vars

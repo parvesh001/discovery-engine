@@ -151,38 +151,33 @@ describe('generateEmbedding', () => {
   });
 });
 
+// Full rate-limiter spacing behavior is covered generically in voyage/rateLimiter.test.ts
+// (shared by embeddings.ts and rerank.ts). This just confirms generateEmbedding actually
+// awaits that shared queue before calling fetch, rather than bypassing it.
 describe('generateEmbedding rate limiting', () => {
   const originalFetch = global.fetch;
-  const originalRateLimitEnv = process.env.VOYAGE_MAX_REQUESTS_PER_MINUTE;
 
   afterEach(() => {
     global.fetch = originalFetch;
-    process.env.VOYAGE_MAX_REQUESTS_PER_MINUTE = originalRateLimitEnv;
-    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
-  it('serializes concurrent calls, spacing them 60s/limit apart', async () => {
-    process.env.VOYAGE_MAX_REQUESTS_PER_MINUTE = '3'; // 20s spacing
-    vi.useFakeTimers();
-
-    const callTimestamps: number[] = [];
+  it('awaits reserveSlot before making the request', async () => {
+    const events: string[] = [];
+    const reserveSlotSpy = vi
+      .spyOn(await import('../voyage/rateLimiter.js'), 'reserveSlot')
+      .mockImplementation(async () => {
+        events.push('reserveSlot');
+      });
     const fetchMock = vi.fn().mockImplementation(async () => {
-      callTimestamps.push(Date.now());
+      events.push('fetch');
       return { ok: true, json: async () => ({ data: [{ embedding: [1, 2, 3] }] }) };
     });
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    const calls = Promise.all([
-      generateEmbedding('a', 'document'),
-      generateEmbedding('b', 'document'),
-      generateEmbedding('c', 'document'),
-    ]);
-    await vi.runAllTimersAsync();
-    await calls;
+    await generateEmbedding('some text', 'document');
 
-    expect(callTimestamps).toHaveLength(3);
-    expect(callTimestamps[1]! - callTimestamps[0]!).toBeGreaterThanOrEqual(20_000);
-    expect(callTimestamps[2]! - callTimestamps[1]!).toBeGreaterThanOrEqual(20_000);
+    expect(events).toEqual(['reserveSlot', 'fetch']);
+    reserveSlotSpy.mockRestore();
   });
 });
