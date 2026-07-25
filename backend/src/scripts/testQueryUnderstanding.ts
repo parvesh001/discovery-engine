@@ -6,10 +6,10 @@ import { understandQuery } from '../services/search/queryUnderstanding.js';
 // hallucinating max_price from soft terms like "cheap") match the spec's expectations.
 export const TEST_QUERIES: string[] = [
   // Explicit hard constraints
-  'pet friendly apartment',
-  '3 bedroom house',
+  'pet friendly flat',
+  '3 bedroom villa',
   'no pets allowed',
-  'a condo with at least 2 bedrooms',
+  'a flat with at least 2 bedrooms',
 
   // Vague / subjective only
   'somewhere cozy and quiet for a weekend',
@@ -18,16 +18,16 @@ export const TEST_QUERIES: string[] = [
   'a relaxing getaway close to nature',
 
   // Numeric constraints
-  'under $150 a night',
+  'under ₹5000 a night',
   'at least 2 bedrooms',
-  '$100 max per night', // purely numeric — checks the semantic_query-never-empty fallback
-  'less than 200 a night, 4 bedrooms',
+  '₹3000 max per night', // purely numeric — checks the semantic_query-never-empty fallback
+  'less than 6000 a night, 4 bedrooms',
 
   // Mixed (explicit + vague)
-  'pet friendly cabin with mountain view',
-  'cheap studio near the beach',
-  '3 bedroom house under $300, pet friendly',
-  'affordable loft with a great view, dog friendly',
+  'pet friendly cottage in Manali',
+  'budget homestay near a Goa beach',
+  '3 bedroom villa under ₹8000 a night, pet friendly',
+  'affordable flat with a great view, dog friendly',
 ];
 
 function loadEnvOrExit(): Env {

@@ -15,7 +15,7 @@ We're simulating a real client's messy catalog. If the dummy data is clean and c
 3. Content requirements for the 35 listings:
    - The same underlying attribute must be expressed differently across listings. Specifically ensure variance for: pet policy (explicit "pet friendly", implicit via amenities list, explicit "no pets", unmentioned), view type (explicit "mountain view", paraphrased "overlooks the valley", unmentioned but inferable from location), and general amenities phrasing.
    - At least 5 "long-tail" listings: unusual property types (e.g. yurt, houseboat, treehouse) and/or very sparse descriptions (1-2 sentences) — these exist specifically to test later whether the system can surface niche listings that don't use conventional language.
-   - Realistic structured fields: `price_per_night` in the $50–$800 range, `bedrooms` from studio (0) to 6, `location` covering a mix of mountain towns, coastal towns, and cities, with corresponding realistic lat/long.
+   - Realistic structured fields: `price_per_night` in the ₹800–₹18,000 range, `bedrooms` from studio (0) to 6, `location` covering a mix of hill stations, coastal towns, heritage towns, and cities, with corresponding realistic lat/long.
 4. `extracted_attributes` and `embedding` must be left `NULL` on insert; `ingestion_status` defaults to `'pending'`.
 5. The seed script must be idempotent — safe to re-run (truncate/clear listings before reinserting, or upsert on a stable identifier).
 6. Listing content should be generated into a separate, human-reviewable file (e.g. `seed-data.ts` as a plain exported array) so the actual text can be reviewed before it's inserted — do not generate and insert in the same opaque step.

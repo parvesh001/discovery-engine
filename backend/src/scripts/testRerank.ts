@@ -12,9 +12,9 @@ import { rerank } from '../services/search/rerank.js';
 // query (criterion 4), which should now be close to the ≤800ms target with rerank-2.5.
 const SUBJECTIVE_QUERIES: string[] = [
   'romantic getaway, not too remote',
-  'somewhere cozy and quiet for a weekend',
+  'somewhere cozy and quiet for a weekend in the hills',
   'a relaxing getaway close to nature',
-  'something charming and full of character',
+  'something charming and full of old-world character',
   'a peaceful spot for a solo writing retreat',
 ];
 
