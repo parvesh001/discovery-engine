@@ -13,10 +13,10 @@ describe('seedListings', () => {
     expect(seedListings).toHaveLength(35);
   });
 
-  it('has price_per_night within the $50-$800 range for every listing', () => {
+  it('has price_per_night within the ₹800-₹18,000 range for every listing', () => {
     for (const listing of seedListings) {
-      expect(listing.pricePerNight).toBeGreaterThanOrEqual(50);
-      expect(listing.pricePerNight).toBeLessThanOrEqual(800);
+      expect(listing.pricePerNight).toBeGreaterThanOrEqual(800);
+      expect(listing.pricePerNight).toBeLessThanOrEqual(18000);
     }
   });
 
