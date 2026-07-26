@@ -32,7 +32,7 @@ const queryIntentSchema = z.object({
   semantic_query: z.string().min(1),
 }) satisfies z.ZodType<QueryIntent>;
 
-const QUERY_MODEL = 'claude-haiku-4-5-20251001';
+export const QUERY_MODEL = 'claude-haiku-4-5-20251001';
 const MAX_TOKENS = 256;
 
 const SYSTEM_PROMPT = `You parse a natural-language rental search query into structured filters plus a semantic remainder.

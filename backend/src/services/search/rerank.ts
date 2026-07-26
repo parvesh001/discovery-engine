@@ -18,7 +18,7 @@ export type RerankOutcome = {
 };
 
 const VOYAGE_RERANK_URL = 'https://api.voyageai.com/v1/rerank';
-const RERANK_MODEL = 'rerank-2.5';
+export const RERANK_MODEL = 'rerank-2.5';
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_CANDIDATES_TO_MODEL = 20;
 
