@@ -2,7 +2,7 @@ import type { ExtractedAttributes } from './extraction.js';
 import { reserveSlot } from '../voyage/rateLimiter.js';
 
 const VOYAGE_EMBEDDINGS_URL = 'https://api.voyageai.com/v1/embeddings';
-const EMBEDDING_MODEL = 'voyage-4';
+export const EMBEDDING_MODEL = 'voyage-4';
 const EMBEDDING_DIMENSION = 1024;
 const DEFAULT_TIMEOUT_MS = 15_000;
 
