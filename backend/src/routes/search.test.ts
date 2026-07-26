@@ -16,10 +16,30 @@ vi.mock('../services/search/searchLogs.js', async (importOriginal) => {
   return { ...actual, logSearch: (...args: unknown[]) => logSearchMock(...args) };
 });
 
+const naiveSearchListingsMock = vi.fn();
+vi.mock('../services/search/naiveSearch.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/search/naiveSearch.js')>();
+  return { ...actual, naiveSearchListings: (...args: unknown[]) => naiveSearchListingsMock(...args) };
+});
+
 import { createApp } from '../app.js';
 import { SearchRetrievalError } from '../services/search/orchestrateSearch.js';
+import type { Listing } from '../services/search/retrieval.js';
 
 const pool = {} as pg.Pool;
+
+const sampleListing: Listing = {
+  id: 'a',
+  title: 'Cozy Cabin',
+  raw_description: 'A cozy cabin.',
+  price_per_night: 100,
+  bedrooms: 1,
+  location: 'Manali',
+  latitude: 0,
+  longitude: 0,
+  extracted_attributes: null,
+  ingestion_status: 'processed',
+};
 
 const sampleResponse: SearchResponse = {
   results: [
@@ -58,6 +78,7 @@ const sampleLogEntry: SearchLogEntry = {
 beforeEach(() => {
   runSearchMock.mockReset();
   logSearchMock.mockClear();
+  naiveSearchListingsMock.mockReset();
 });
 
 describe('POST /api/search', () => {
@@ -131,5 +152,66 @@ describe('POST /api/search — rate limiting', () => {
 
     const limited = await request(app).post('/api/search').send({ query: 'cozy cabin' });
     expect(limited.status).toBe(429);
+  });
+});
+
+describe('GET /api/search/naive', () => {
+  const app = createApp(pool);
+
+  it('returns 200 with results for a valid query', async () => {
+    naiveSearchListingsMock.mockResolvedValue([sampleListing]);
+
+    const response = await request(app).get('/api/search/naive').query({ q: 'cabin' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ results: [sampleListing] });
+    expect(naiveSearchListingsMock).toHaveBeenCalledWith(pool, 'cabin');
+  });
+
+  it('passes literal % and _ through to the service unescaped by the route itself', async () => {
+    naiveSearchListingsMock.mockResolvedValue([]);
+
+    const response = await request(app).get('/api/search/naive').query({ q: '50%_off' });
+
+    expect(response.status).toBe(200);
+    expect(naiveSearchListingsMock).toHaveBeenCalledWith(pool, '50%_off');
+  });
+
+  it('returns 400 for a missing q', async () => {
+    const response = await request(app).get('/api/search/naive');
+
+    expect(response.status).toBe(400);
+    expect(typeof response.body.error).toBe('string');
+    expect(naiveSearchListingsMock).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for an empty q', async () => {
+    const response = await request(app).get('/api/search/naive').query({ q: '' });
+
+    expect(response.status).toBe(400);
+    expect(naiveSearchListingsMock).not.toHaveBeenCalled();
+  });
+
+  it('returns 500 when the service throws', async () => {
+    naiveSearchListingsMock.mockRejectedValue(new Error('db error'));
+
+    const response = await request(app).get('/api/search/naive').query({ q: 'cabin' });
+
+    expect(response.status).toBe(500);
+    expect(typeof response.body.error).toBe('string');
+  });
+
+  it('shares the rate limiter with POST /api/search (confirmed shared-budget design)', async () => {
+    const sharedApp = createApp(pool, { searchRateLimit: { windowMs: 60_000, max: 3 } });
+    runSearchMock.mockResolvedValue({ response: sampleResponse, logEntry: sampleLogEntry });
+    naiveSearchListingsMock.mockResolvedValue([sampleListing]);
+
+    const first = await request(sharedApp).post('/api/search').send({ query: 'cozy cabin' });
+    const second = await request(sharedApp).get('/api/search/naive').query({ q: 'cabin' });
+    const third = await request(sharedApp).post('/api/search').send({ query: 'cozy cabin' });
+    expect([first.status, second.status, third.status]).toEqual([200, 200, 200]);
+
+    const fourth = await request(sharedApp).get('/api/search/naive').query({ q: 'cabin' });
+    expect(fourth.status).toBe(429);
   });
 });
