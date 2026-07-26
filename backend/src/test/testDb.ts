@@ -1,4 +1,12 @@
 import 'dotenv/config';
+import { registerNumericTypeParser } from '../db.js';
+
+// Integration tests build their pg.Pool directly against getTestDatabaseUrl() rather
+// than through createPool() (db.ts), so the NUMERIC type-parser fix wouldn't otherwise
+// apply to them — register it here too rather than leaving test behavior to diverge
+// from prod on the exact fields (price_per_night, latitude, longitude) most of these
+// tests exercise.
+registerNumericTypeParser();
 
 export function getTestDatabaseUrl(): string {
   const testUrl = process.env.TEST_DATABASE_URL;

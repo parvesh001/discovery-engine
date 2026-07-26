@@ -58,6 +58,8 @@ describe('retrieveCandidates', () => {
     title: string;
     price_per_night?: number;
     bedrooms?: number;
+    latitude?: number;
+    longitude?: number;
     extracted_attributes?: ExtractedAttributes;
     embedding?: number[] | null;
     ingestion_status?: string;
@@ -65,6 +67,8 @@ describe('retrieveCandidates', () => {
     const row = {
       price_per_night: 100,
       bedrooms: 1,
+      latitude: 0,
+      longitude: 0,
       extracted_attributes: baseAttributes,
       embedding: oneHot(0) as number[] | null,
       ingestion_status: 'processed',
@@ -75,7 +79,7 @@ describe('retrieveCandidates', () => {
     await pool.query(
       `INSERT INTO listings (title, raw_description, price_per_night, bedrooms, location, latitude, longitude,
                               extracted_attributes, embedding, ingestion_status)
-       VALUES ($1, 'A test listing description.', $2, $3, 'Test, CO', 0, 0, $4, $5::vector, $6)`,
+       VALUES ($1, 'A test listing description.', $2, $3, 'Test, CO', $7, $8, $4, $5::vector, $6)`,
       [
         row.title,
         row.price_per_night,
@@ -83,6 +87,8 @@ describe('retrieveCandidates', () => {
         JSON.stringify(row.extracted_attributes),
         embeddingLiteral,
         row.ingestion_status,
+        row.latitude,
+        row.longitude,
       ],
     );
   }
@@ -93,6 +99,23 @@ describe('retrieveCandidates', () => {
     await retrieveCandidates(pool, { filters: emptyFilters, semantic_query: 'a cozy cabin' });
 
     expect(generateEmbeddingMock).toHaveBeenCalledWith('a cozy cabin', 'query');
+  });
+
+  it('returns NUMERIC columns (price_per_night, latitude, longitude) as real numbers, not strings', async () => {
+    // Regression test for the registerNumericTypeParser() fix in db.ts: node-pg returns
+    // NUMERIC columns as strings by default, which silently violated the `Listing` type's
+    // declared `number` fields until the parser was registered globally.
+    await insertListing({ title: 'Numeric Check', price_per_night: 250, latitude: 12.34, longitude: 56.78 });
+
+    const result = await retrieveCandidates(pool, { filters: emptyFilters, semantic_query: 'a place to stay' });
+    const candidate = result.candidates[0];
+
+    expect(typeof candidate?.price_per_night).toBe('number');
+    expect(candidate?.price_per_night).toBe(250);
+    expect(typeof candidate?.latitude).toBe('number');
+    expect(candidate?.latitude).toBe(12.34);
+    expect(typeof candidate?.longitude).toBe('number');
+    expect(candidate?.longitude).toBe(56.78);
   });
 
   it('never returns a listing where extracted_attributes.pet_friendly = false when the filter is true', async () => {
