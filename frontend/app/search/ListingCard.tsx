@@ -8,19 +8,6 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined;
 }
 
-/**
- * `price_per_night` is a Postgres NUMERIC column, which node-pg returns as a numeric
- * string (e.g. "4500"), not a JS number — even though the backend's own `Listing` type
- * declares `number`. Confirmed against the real running backend, not a hypothetical.
- * Accepting both here (rather than "fixing" the backend's DB layer, which is out of this
- * phase's scope) keeps the price line from silently disappearing for every real listing.
- */
-function asNumericValue(value: unknown): number | undefined {
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) return Number(value);
-  return undefined;
-}
-
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
@@ -34,7 +21,7 @@ function asStringArray(value: unknown): string[] {
  */
 export function ListingCard({ listing }: { listing: Record<string, unknown> }) {
   const title = asString(listing.title) ?? 'Untitled listing';
-  const price = asNumericValue(listing.price_per_night);
+  const price = asNumber(listing.price_per_night);
   const bedrooms = asNumber(listing.bedrooms);
   const location = asString(listing.location);
   // Nullable by design (Voyage caps rerank at 20 candidates; the rest are appended
