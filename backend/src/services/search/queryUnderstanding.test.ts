@@ -19,7 +19,7 @@ describe('understandQuery', () => {
   it('returns parsed intent on a valid first response', async () => {
     callClaudeMock.mockResolvedValueOnce(
       JSON.stringify({
-        filters: { pet_friendly: true, property_type: 'cabin', min_bedrooms: null, max_price: null },
+        filters: { pet_friendly: true, property_type: 'cabin', location: null, min_bedrooms: null, max_price: null },
         semantic_query: 'cabin with a mountain view',
       }),
     );
@@ -27,9 +27,23 @@ describe('understandQuery', () => {
     const result = await understandQuery('pet friendly cabin with mountain view');
 
     expect(result).toEqual({
-      filters: { pet_friendly: true, property_type: 'cabin', min_bedrooms: null, max_price: null },
+      filters: { pet_friendly: true, property_type: 'cabin', location: null, min_bedrooms: null, max_price: null },
       semantic_query: 'cabin with a mountain view',
     });
+    expect(callClaudeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts a response with a populated location filter, captured exactly as named', async () => {
+    callClaudeMock.mockResolvedValueOnce(
+      JSON.stringify({
+        filters: { pet_friendly: true, property_type: 'cottage', location: 'Manali', min_bedrooms: null, max_price: null },
+        semantic_query: 'pet friendly cottage in Manali',
+      }),
+    );
+
+    const result = await understandQuery('pet friendly cottage in Manali');
+
+    expect(result.filters.location).toBe('Manali');
     expect(callClaudeMock).toHaveBeenCalledTimes(1);
   });
 
@@ -37,7 +51,7 @@ describe('understandQuery', () => {
     callClaudeMock.mockResolvedValueOnce(
       '```json\n' +
         JSON.stringify({
-          filters: { pet_friendly: null, property_type: null, min_bedrooms: null, max_price: null },
+          filters: { pet_friendly: null, property_type: null, location: null, min_bedrooms: null, max_price: null },
           semantic_query: 'somewhere cozy and quiet for a weekend',
         }) +
         '\n```',
@@ -51,7 +65,7 @@ describe('understandQuery', () => {
     callClaudeMock.mockResolvedValueOnce('not json');
     callClaudeMock.mockResolvedValueOnce(
       JSON.stringify({
-        filters: { pet_friendly: null, property_type: 'studio', min_bedrooms: null, max_price: null },
+        filters: { pet_friendly: null, property_type: 'studio', location: null, min_bedrooms: null, max_price: null },
         semantic_query: 'cheap studio near the beach',
       }),
     );
@@ -84,13 +98,13 @@ describe('understandQuery', () => {
   it('rejects a max_price that is not a number, even if the rest of the shape is valid', async () => {
     callClaudeMock.mockResolvedValueOnce(
       JSON.stringify({
-        filters: { pet_friendly: null, property_type: null, min_bedrooms: null, max_price: 'cheap' },
+        filters: { pet_friendly: null, property_type: null, location: null, min_bedrooms: null, max_price: 'cheap' },
         semantic_query: 'cheap studio near the beach',
       }),
     );
     callClaudeMock.mockResolvedValueOnce(
       JSON.stringify({
-        filters: { pet_friendly: null, property_type: 'studio', min_bedrooms: null, max_price: null },
+        filters: { pet_friendly: null, property_type: 'studio', location: null, min_bedrooms: null, max_price: null },
         semantic_query: 'cheap studio near the beach',
       }),
     );

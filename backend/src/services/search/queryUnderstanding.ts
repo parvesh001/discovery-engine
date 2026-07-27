@@ -6,6 +6,7 @@ export type QueryIntent = {
   filters: {
     pet_friendly: boolean | null;
     property_type: string | null;
+    location: string | null;
     min_bedrooms: number | null;
     max_price: number | null;
   };
@@ -16,6 +17,11 @@ const queryIntentSchema = z.object({
   filters: z.object({
     pet_friendly: z.boolean().nullable(),
     property_type: z.string().nullable(),
+    // Confirmed decision (see SYSTEM_PROMPT): captured exactly as named in the query
+    // ("Manali"), never expanded to the DB's full "City, State" form ("Manali, Himachal
+    // Pradesh") — expanding it would require inferring geography the query never stated,
+    // which is the same kind of guess every other field is forbidden from making.
+    location: z.string().nullable(),
     min_bedrooms: z.number().int().nullable(),
     // Confirmed decision (see SYSTEM_PROMPT): this is only ever populated from an
     // explicit number/comparator in the query. Vague terms like "cheap" or
@@ -45,6 +51,7 @@ Respond with ONLY valid JSON matching this exact shape, no prose, no markdown co
   "filters": {
     "pet_friendly": boolean | null,
     "property_type": string | null,
+    "location": string | null,
     "min_bedrooms": number | null,
     "max_price": number | null
   },
@@ -63,6 +70,14 @@ Field rules:
   type may ALSO remain part of semantic_query if it carries aesthetic/vibe weight (e.g. "cabin" implies a
   rustic, wood, mountain feel beyond just the category) — populating the filter does not mean removing it
   from the semantic remainder.
+- location: a place name (city, region, or landmark-adjacent area, e.g. "Manali", "Goa", "near Cubbon Park")
+  only if the query names a real, concrete place. Use null if no place is named — never populate this from
+  vague locational language ("somewhere remote", "close to the city"), that stays in semantic_query only.
+  Capture it EXACTLY as named in the query — never expand or add a region/state/country the query didn't
+  state (e.g. "Manali" stays "Manali", not "Manali, Himachal Pradesh") — inventing that would be the same
+  kind of guess every other field is forbidden from making. Like property_type, this ALSO remains part of
+  semantic_query since a place name can carry vibe beyond pure geography (e.g. "Goa" implies a beach/coastal
+  aesthetic, not just a filter value).
 - min_bedrooms: an integer only if the query states an explicit count ("2 bedroom", "at least 3 bedrooms",
   "3BR"). Use null otherwise — never infer a number from words like "family-sized" or "spacious".
 - max_price: a number only if the query gives an explicit number or comparator ("under $150", "$100 max",
@@ -80,14 +95,18 @@ Field rules:
 
 Worked examples:
 - "pet friendly cabin with mountain view" -> filters: {pet_friendly: true, property_type: "cabin",
-  min_bedrooms: null, max_price: null}, semantic_query: "cabin with a mountain view"
+  location: null, min_bedrooms: null, max_price: null}, semantic_query: "cabin with a mountain view"
 - "somewhere cozy and quiet for a weekend" -> filters: {pet_friendly: null, property_type: null,
-  min_bedrooms: null, max_price: null}, semantic_query: "somewhere cozy and quiet for a weekend getaway"
-- "cheap studio near the beach" -> filters: {pet_friendly: null, property_type: "studio",
+  location: null, min_bedrooms: null, max_price: null}, semantic_query: "somewhere cozy and quiet for a
+  weekend getaway"
+- "cheap studio near the beach" -> filters: {pet_friendly: null, property_type: "studio", location: null,
   min_bedrooms: null, max_price: null}, semantic_query: "cheap studio near the beach"
-- "$100 max per night" -> filters: {pet_friendly: null, property_type: null, min_bedrooms: null,
-  max_price: 100}, semantic_query: "a place to stay" (nothing descriptive remains, so fall back per the
-  semantic_query rule above rather than returning an empty string)`;
+- "$100 max per night" -> filters: {pet_friendly: null, property_type: null, location: null,
+  min_bedrooms: null, max_price: 100}, semantic_query: "a place to stay" (nothing descriptive remains, so
+  fall back per the semantic_query rule above rather than returning an empty string)
+- "pet friendly cottage in Manali" -> filters: {pet_friendly: true, property_type: "cottage",
+  location: "Manali", min_bedrooms: null, max_price: null}, semantic_query: "pet friendly cottage in
+  Manali" (location captured exactly as named, not expanded to "Manali, Himachal Pradesh")`;
 
 function buildRetryUserMessage(previousResponse: string, parseError: string): string {
   return `Your previous response failed validation.

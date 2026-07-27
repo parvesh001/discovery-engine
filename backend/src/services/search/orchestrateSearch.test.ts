@@ -54,6 +54,7 @@ function makeCandidate(id: string, similarityScore: number): RankedCandidate {
 const emptyFilters: QueryIntent['filters'] = {
   pet_friendly: null,
   property_type: null,
+  location: null,
   min_bedrooms: null,
   max_price: null,
 };

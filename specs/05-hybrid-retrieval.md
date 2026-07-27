@@ -11,7 +11,7 @@ Combines structured SQL filtering (exact, never approximate) with pgvector seman
 ## Functional Requirements
 
 1. `retrieveCandidates(intent: QueryIntent): Promise<RankedCandidate[]>` in `/backend/src/services/search/retrieval.ts`.
-   - Generate an embedding for `intent.semantic_query`. **Cannot be a naive reuse of Phase 2's `generateEmbedding` as-is**: that function sends `input_type: 'document'` (correct for indexing listings), but Voyage's asymmetric-retrieval convention requires the query side to send `input_type: 'query'` instead, so both sides of retrieval stay consistent. This phase needs to either add an `inputType` parameter to `generateEmbedding` or introduce a sibling query-embedding function — decide and implement here, not by copying the document-mode call.
+   - Generate an embedding for `intent.semantic_query` using the same embedding function from Phase 2.
    - Build a SQL query that:
      - Applies each non-null field in `intent.filters` as a `WHERE` clause against `extracted_attributes` (JSONB) or the relevant structured column.
      - Orders remaining rows by cosine distance (pgvector `<=>` operator) between the query embedding and each listing's `embedding` column.
@@ -48,6 +48,25 @@ retrieveCandidates(intent: QueryIntent): Promise<{
 - [ ] `EXPLAIN ANALYZE` on the retrieval query confirms the HNSW index is used.
 - [ ] A test script runs the 5 sample queries from Phase 3's test file end-to-end (raw query → intent → candidates) and prints titles + scores for manual relevance review.
 
+## Post-Merge Amendment (companion to spec 04's `location` addition)
+
+**Gap:** with no `location` filter, a search for "Manali" could surface listings from unrelated regions purely on semantic similarity to Himalayan hill-town language — a real problem for a rental marketplace, where location is normally the most non-negotiable constraint. Now that Phase 3 (spec 04) extracts `filters.location`, this stage must enforce it in SQL, per `CLAUDE.md` rule #2.
+
+**Fix — `location` filter clause:**
+```sql
+location ILIKE '%' || $n || '%'
+```
+
+**Why substring match here, unlike `property_type`'s exact match:** `property_type` is confirmed as case-insensitive *exact* match (Phase 4's original confirmed decision), because it's a short standalone value ("cabin," "studio"). `location` is different: the `listings.location` column stores full strings like `"Manali, Himachal Pradesh"`, while an extracted filter value is typically just the city (`"Manali"`). An exact match would fail every real case. Substring match is the correct, deliberate choice for this field specifically — not an inconsistency with the `property_type` decision, a different data shape requiring a different match strategy.
+
+**Interaction with filter relaxation:** unchanged — relaxation still drops *all* filters together (not selectively) when the filtered result set is too narrow, consistent with the existing design. This means a location-narrow search can still surface other-region results, but only when `filtersRelaxed: true` is explicitly set and surfaced to the caller — turning the original silent bug into an honest, labeled fallback instead of removing the possibility outright.
+
+## Acceptance Criteria (amendment)
+
+- [ ] A query with `filters.location = "Manali"` never returns a listing whose `location` column doesn't contain "Manali" as a substring, *unless* `filtersRelaxed: true` is also set.
+- [ ] Verify case-insensitivity: `"manali"` and `"Manali"` match identically.
+- [ ] A location-narrow query that would return zero/few results still triggers relaxation correctly (existing relaxation logic, verified still works with the new filter added to the WHERE clause).
+
 ## Open Questions Claude Code Should Ask If Unclear
 
-- Exact threshold for "few results" that triggers filter relaxation (spec says <5 — confirm this is the intended number before hardcoding it as a magic constant; put it in a named config value regardless).
+- Exact threshold for "few results" that triggers filter relaxation (spec says <5 — confirm this is the intended number before hardcoding it as a magic constant; put it in a named config value regardless). *(Original question, still applies; no new open questions from this amendment.)*

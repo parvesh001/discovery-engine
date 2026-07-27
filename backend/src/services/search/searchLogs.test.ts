@@ -17,7 +17,7 @@ describe('logSearch', () => {
   const sampleEntry: SearchLogEntry = {
     raw_query: 'pet friendly cabin under 5000',
     extracted_intent: {
-      filters: { pet_friendly: true, property_type: 'cabin', min_bedrooms: null, max_price: 5000 },
+      filters: { pet_friendly: true, property_type: 'cabin', location: null, min_bedrooms: null, max_price: 5000 },
       semantic_query: 'cabin',
     },
     candidate_ids: ['11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'],
@@ -50,7 +50,7 @@ describe('logSearch', () => {
     const failureEntry: SearchLogEntry = {
       raw_query: 'somewhere quiet',
       extracted_intent: {
-        filters: { pet_friendly: null, property_type: null, min_bedrooms: null, max_price: null },
+        filters: { pet_friendly: null, property_type: null, location: null, min_bedrooms: null, max_price: null },
         semantic_query: 'somewhere quiet',
       },
       candidate_ids: [],

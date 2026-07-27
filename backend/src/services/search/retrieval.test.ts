@@ -37,6 +37,7 @@ const baseAttributes: ExtractedAttributes = {
 const emptyFilters: QueryIntent['filters'] = {
   pet_friendly: null,
   property_type: null,
+  location: null,
   min_bedrooms: null,
   max_price: null,
 };
@@ -58,6 +59,7 @@ describe('retrieveCandidates', () => {
     title: string;
     price_per_night?: number;
     bedrooms?: number;
+    location?: string;
     latitude?: number;
     longitude?: number;
     extracted_attributes?: ExtractedAttributes;
@@ -67,6 +69,7 @@ describe('retrieveCandidates', () => {
     const row = {
       price_per_night: 100,
       bedrooms: 1,
+      location: 'Test, CO',
       latitude: 0,
       longitude: 0,
       extracted_attributes: baseAttributes,
@@ -79,7 +82,7 @@ describe('retrieveCandidates', () => {
     await pool.query(
       `INSERT INTO listings (title, raw_description, price_per_night, bedrooms, location, latitude, longitude,
                               extracted_attributes, embedding, ingestion_status)
-       VALUES ($1, 'A test listing description.', $2, $3, 'Test, CO', $7, $8, $4, $5::vector, $6)`,
+       VALUES ($1, 'A test listing description.', $2, $3, $7, $8, $9, $4, $5::vector, $6)`,
       [
         row.title,
         row.price_per_night,
@@ -87,6 +90,7 @@ describe('retrieveCandidates', () => {
         JSON.stringify(row.extracted_attributes),
         embeddingLiteral,
         row.ingestion_status,
+        row.location,
         row.latitude,
         row.longitude,
       ],
@@ -181,6 +185,49 @@ describe('retrieveCandidates', () => {
     expect(result.filtersRelaxed).toBe(false);
     expect(result.candidates).toHaveLength(5);
     expect(result.candidates.some((c) => c.title === 'Log Cabin Retreat')).toBe(false);
+  });
+
+  it('matches location as a substring, not an exact match, since the column stores full "City, State" strings', async () => {
+    for (let i = 0; i < 5; i += 1) {
+      await insertListing({ title: `Manali Stay ${i}`, location: 'Manali, Himachal Pradesh' });
+    }
+    await insertListing({ title: 'Unrelated Region', location: 'Kaza, Spiti Valley, Himachal Pradesh' });
+
+    const result = await retrieveCandidates(pool, {
+      filters: { ...emptyFilters, location: 'Manali' },
+      semantic_query: 'a place to stay',
+    });
+
+    expect(result.filtersRelaxed).toBe(false);
+    expect(result.candidates).toHaveLength(5);
+    expect(result.candidates.some((c) => c.title === 'Unrelated Region')).toBe(false);
+  });
+
+  it('matches location case-insensitively', async () => {
+    for (let i = 0; i < 5; i += 1) {
+      await insertListing({ title: `Manali Stay ${i}`, location: 'Manali, Himachal Pradesh' });
+    }
+
+    const result = await retrieveCandidates(pool, {
+      filters: { ...emptyFilters, location: 'manali' },
+      semantic_query: 'a place to stay',
+    });
+
+    expect(result.filtersRelaxed).toBe(false);
+    expect(result.candidates).toHaveLength(5);
+  });
+
+  it('relaxes rather than erroring when a location filter is too narrow, still ranking semantically', async () => {
+    await insertListing({ title: 'Only Manali Listing', location: 'Manali, Himachal Pradesh' });
+    await insertListing({ title: 'Goa Listing', location: 'Candolim, Goa' });
+
+    const result = await retrieveCandidates(pool, {
+      filters: { ...emptyFilters, location: 'Manali' },
+      semantic_query: 'a place to stay',
+    });
+
+    expect(result.filtersRelaxed).toBe(true);
+    expect(result.candidates.map((c) => c.title).sort()).toEqual(['Goa Listing', 'Only Manali Listing']);
   });
 
   it('applies the structured bedrooms column for min_bedrooms, not extracted_attributes.bedrooms_mentioned', async () => {

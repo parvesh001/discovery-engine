@@ -51,6 +51,32 @@ understandQuery(rawQuery: string): Promise<QueryIntent>
 - [ ] All 15 test queries in the test script produce valid, schema-conformant output with no crashes.
 - [ ] Malformed/unparseable model output triggers exactly one retry, not an infinite loop or a crash.
 
+## Post-Merge Amendment (found during Phase 7 manual testing)
+
+**Gap found:** `QueryIntent.filters` had no `location` field at all — a search for "Manali" had nowhere to put the place name except `semantic_query`, meaning location was only ever a soft vibe signal, never an enforced constraint. A search for a specific place could and did surface listings from unrelated regions purely on semantic similarity (e.g. other Himalayan hill towns ranking highly for "Manali" searches). For a rental marketplace, location is normally the single most non-negotiable constraint a user has — this is a real gap, not a nice-to-have.
+
+**Fix:** add `location: string | null` to `QueryIntent.filters`.
+
+```ts
+type QueryIntent = {
+  filters: {
+    pet_friendly: boolean | null;
+    property_type: string | null;
+    location: string | null;
+    min_bedrooms: number | null;
+    max_price: number | null;
+  };
+  semantic_query: string;
+}
+```
+
+**Extraction rule** (same "only if explicit" principle as every other filter): populate `location` only when the query names a real place (city, region, landmark-adjacent area) — e.g. "Manali," "Goa," "near Cubbon Park." Do not populate it from vague locational language ("somewhere remote," "close to the city") — that stays in `semantic_query`. The place name should still also remain in `semantic_query` in its original phrasing (same redundancy-is-harmless reasoning already applied to `property_type`), since it may carry vibe/context beyond pure geography (e.g. "Goa" implies beach/coastal aesthetic, not just a filter value).
+
+## Acceptance Criteria (amendment)
+
+- [ ] For "pet friendly cottage in Manali": `filters.location` captures "Manali" (or "Manali, Himachal Pradesh" — either acceptable, document which), in addition to the existing `pet_friendly`/`property_type` extraction.
+- [ ] For a query with no place name ("cozy quiet weekend getaway"): `filters.location` is `null`, not hallucinated from vague words.
+
 ## Open Questions Claude Code Should Ask If Unclear
 
-- How to handle a soft quantitative term like "cheap" or "affordable" that has no explicit number — flag this as a judgment call to confirm rather than silently deciding.
+- Whether `location` should capture just the city ("Manali") or the full string as written ("Manali, Himachal Pradesh") — either is acceptable, document the choice since it affects how Phase 4's SQL match needs to work (substring match handles either correctly, but consistency matters for eval test cases).

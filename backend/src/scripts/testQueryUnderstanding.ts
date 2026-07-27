@@ -28,6 +28,11 @@ export const TEST_QUERIES: string[] = [
   'budget homestay near a Goa beach',
   '3 bedroom villa under ₹8000 a night, pet friendly',
   'affordable flat with a great view, dog friendly',
+
+  // Location as the only explicit constraint — isolates filters.location from the other
+  // fields, and (per seed-data.ts) only one listing is tagged "Manali, Himachal Pradesh",
+  // so this also exercises the retrieval filter-relaxation fallback end-to-end.
+  'a place to stay in Manali',
 ];
 
 function loadEnvOrExit(): Env {
