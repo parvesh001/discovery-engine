@@ -18,8 +18,13 @@ function asStringArray(value: unknown): string[] {
  * has the expected shape. Each field is read defensively here so one malformed listing
  * renders as a degraded-but-present card instead of throwing and taking out the rest of
  * the column's list.
+ *
+ * `variant` gates chips/relevance score, not just data presence: naive's SQL selects the
+ * same `extracted_attributes` column as the AI pipeline, so that data can technically be
+ * present on a naive row too — but naive never derived any understanding from it, so
+ * showing it there would misattribute the AI pipeline's work to the dumb-match column.
  */
-export function ListingCard({ listing }: { listing: Record<string, unknown> }) {
+export function ListingCard({ listing, variant }: { listing: Record<string, unknown>; variant: 'naive' | 'ai' }) {
   const title = asString(listing.title) ?? 'Untitled listing';
   const price = asNumber(listing.price_per_night);
   const bedrooms = asNumber(listing.bedrooms);
@@ -28,37 +33,40 @@ export function ListingCard({ listing }: { listing: Record<string, unknown> }) {
   // unscored) — asNumber returns undefined for both `null` and any other non-number,
   // so a missing/absent score and an explicit null both simply omit the indicator below,
   // never render as 0.
-  const relevanceScore = asNumber(listing.relevanceScore);
+  const relevanceScore = variant === 'ai' ? asNumber(listing.relevanceScore) : undefined;
 
-  const attrs = isRecord(listing.extracted_attributes) ? listing.extracted_attributes : null;
-  const chips = [asString(attrs?.property_type), asString(attrs?.view_type), ...asStringArray(attrs?.amenities)]
+  const attrs = variant === 'ai' && isRecord(listing.extracted_attributes) ? listing.extracted_attributes : null;
+  // Strictly `=== true`: null/ambiguous pet policy must never render as friendly (a real
+  // seed-data case — some listings are genuinely unspecified, not implicitly pet-friendly).
+  const petFriendly = attrs?.pet_friendly === true;
+  const chips = [
+    petFriendly ? 'Pet Friendly' : undefined,
+    asString(attrs?.property_type),
+    asString(attrs?.view_type),
+    ...asStringArray(attrs?.amenities),
+  ]
     .filter((chip): chip is string => Boolean(chip))
-    .slice(0, 3);
+    .slice(0, 4);
 
   return (
-    <li className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-      <h3 className="font-semibold text-gray-900 dark:text-gray-50">{title}</h3>
-      <div className="mt-1 flex flex-wrap gap-x-3 text-sm text-gray-600 dark:text-gray-300">
-        {price !== undefined && <span>${price}/night</span>}
-        {bedrooms !== undefined && <span>{bedrooms} bd</span>}
-        {location && <span>{location}</span>}
+    <li className="rounded-lg border border-hairline bg-panel p-4">
+      <h3 className="font-heading font-semibold text-signal">{title}</h3>
+      <div className="mt-1 flex flex-wrap gap-x-3 text-sm">
+        {price !== undefined && <span className="font-mono text-mist">${price}/night</span>}
+        {bedrooms !== undefined && <span className="font-mono text-mist">{bedrooms} bd</span>}
+        {location && <span className="text-mist">{location}</span>}
       </div>
       {chips.length > 0 && (
         <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Matched attributes">
           {chips.map((chip) => (
-            <li
-              key={chip}
-              className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
-            >
+            <li key={chip} className="rounded-full bg-flare/10 px-2 py-0.5 text-xs text-flare">
               {chip}
             </li>
           ))}
         </ul>
       )}
       {relevanceScore !== undefined && (
-        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          Relevance: {(relevanceScore * 100).toFixed(0)}%
-        </p>
+        <p className="mt-2 font-mono text-xs text-flare">Relevance: {(relevanceScore * 100).toFixed(0)}%</p>
       )}
     </li>
   );
