@@ -57,6 +57,16 @@ function buildFilterClauses(filters: QueryIntent['filters']): { clauses: string[
     values.push(filters.property_type);
     nextParam += 1;
   }
+  if (filters.location !== null) {
+    // Substring match, deliberately unlike property_type's exact match: the `location`
+    // column stores full "City, State" strings (e.g. "Manali, Himachal Pradesh"), while an
+    // extracted filter is typically just the place name as the query named it (e.g.
+    // "Manali") — an exact match would fail every real case. This is a different data
+    // shape requiring a different match strategy, not an inconsistency with property_type.
+    clauses.push(`location ILIKE '%' || $${nextParam} || '%'`);
+    values.push(filters.location);
+    nextParam += 1;
+  }
   if (filters.min_bedrooms !== null) {
     // Structured `bedrooms` column, not extracted_attributes.bedrooms_mentioned — the
     // latter means "the listing text itself states a count," a different fact.

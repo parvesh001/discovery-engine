@@ -64,7 +64,7 @@ const sampleResponse: SearchResponse = {
 
 const sampleLogEntry: SearchLogEntry = {
   raw_query: 'cozy cabin',
-  extracted_intent: { filters: { pet_friendly: null, property_type: null, min_bedrooms: null, max_price: null }, semantic_query: 'cozy cabin' },
+  extracted_intent: { filters: { pet_friendly: null, property_type: null, location: null, min_bedrooms: null, max_price: null }, semantic_query: 'cozy cabin' },
   candidate_ids: ['a'],
   ranked_ids: ['a'],
   latency_ms: 180,

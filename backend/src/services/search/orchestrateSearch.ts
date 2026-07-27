@@ -15,6 +15,7 @@ export type SearchResponse = {
 const FALLBACK_FILTERS: QueryIntent['filters'] = {
   pet_friendly: null,
   property_type: null,
+  location: null,
   min_bedrooms: null,
   max_price: null,
 };
