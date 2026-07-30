@@ -50,9 +50,9 @@ describe('retrieveCandidates', () => {
   });
 
   beforeEach(async () => {
-    await pool.query('TRUNCATE TABLE listings');
+    await pool.query('TRUNCATE TABLE listings CASCADE');
     generateEmbeddingMock.mockReset();
-    generateEmbeddingMock.mockResolvedValue(oneHot(0));
+    generateEmbeddingMock.mockResolvedValue({ embedding: oneHot(0), tokens: 7 });
   });
 
   async function insertListing(overrides: {
@@ -102,7 +102,7 @@ describe('retrieveCandidates', () => {
 
     await retrieveCandidates(pool, { filters: emptyFilters, semantic_query: 'a cozy cabin' });
 
-    expect(generateEmbeddingMock).toHaveBeenCalledWith('a cozy cabin', 'query');
+    expect(generateEmbeddingMock).toHaveBeenCalledWith('a cozy cabin', 'query', undefined, undefined);
   });
 
   it('returns NUMERIC columns (price_per_night, latitude, longitude) as real numbers, not strings', async () => {
@@ -271,7 +271,7 @@ describe('retrieveCandidates', () => {
     await insertListing({ title: 'Orthogonal', embedding: oneHot(1) });
     await insertListing({ title: 'Opposite', embedding: oneHot(0, -1) });
 
-    generateEmbeddingMock.mockResolvedValue(oneHot(0));
+    generateEmbeddingMock.mockResolvedValue({ embedding: oneHot(0), tokens: 7 });
 
     const result = await retrieveCandidates(pool, { filters: emptyFilters, semantic_query: 'anything' });
 

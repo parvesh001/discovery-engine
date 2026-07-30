@@ -24,9 +24,13 @@ describe('logSearch', () => {
     ranked_ids: ['22222222-2222-2222-2222-222222222222', '11111111-1111-1111-1111-111111111111'],
     latency_ms: 842,
     model_calls: {
-      query_understanding: { model: 'claude-haiku-4-5-20251001', succeeded: true },
-      embedding: { model: 'voyage-4' },
-      rerank: { model: 'rerank-2.5', degraded: false },
+      query_understanding: {
+        model: 'claude-haiku-4-5-20251001',
+        succeeded: true,
+        usage: { inputTokens: 40, outputTokens: 20 },
+      },
+      embedding: { model: 'voyage-4', tokens: 8 },
+      rerank: { model: 'rerank-2.5', degraded: false, tokens: 150 },
     },
   };
 
@@ -57,7 +61,11 @@ describe('logSearch', () => {
       ranked_ids: [],
       latency_ms: 120,
       model_calls: {
-        query_understanding: { model: 'claude-haiku-4-5-20251001', succeeded: true },
+        query_understanding: {
+          model: 'claude-haiku-4-5-20251001',
+          succeeded: true,
+          usage: { inputTokens: 40, outputTokens: 20 },
+        },
         embedding: null,
         rerank: null,
         failure: { stage: 'retrieval', error: true },

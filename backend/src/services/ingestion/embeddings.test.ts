@@ -81,9 +81,9 @@ describe('generateEmbedding', () => {
     });
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    const embedding = await generateEmbedding('some text', 'document');
+    const result = await generateEmbedding('some text', 'document');
 
-    expect(embedding).toHaveLength(1024);
+    expect(result.embedding).toHaveLength(1024);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -128,9 +128,9 @@ describe('generateEmbedding', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({ data: [{ embedding: [1, 2, 3] }] }) });
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    const embedding = await generateEmbedding('some text', 'document');
+    const result = await generateEmbedding('some text', 'document');
 
-    expect(embedding).toEqual([1, 2, 3]);
+    expect(result.embedding).toEqual([1, 2, 3]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 

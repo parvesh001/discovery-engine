@@ -44,7 +44,7 @@ export async function seedDatabase(pool: pg.Pool, listings: SeedListing[] = seed
 
   try {
     await client.query('BEGIN');
-    await client.query('TRUNCATE TABLE listings');
+    await client.query('TRUNCATE TABLE listings CASCADE');
 
     const { text, values } = buildInsertQuery(listings);
     await client.query(text, values);

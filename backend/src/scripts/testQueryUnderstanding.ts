@@ -51,7 +51,7 @@ async function main(): Promise<void> {
   for (const query of TEST_QUERIES) {
     console.log(`\nQuery: "${query}"`);
     try {
-      const intent = await understandQuery(query);
+      const { intent } = await understandQuery(query);
       console.log(JSON.stringify(intent, null, 2));
     } catch (error) {
       console.error('Failed:', error instanceof Error ? error.message : error);

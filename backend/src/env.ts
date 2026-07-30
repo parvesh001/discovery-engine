@@ -11,6 +11,15 @@ const envSchema = z.object({
   VOYAGE_API_KEY: z
     .string({ required_error: 'VOYAGE_API_KEY is required' })
     .min(1, 'VOYAGE_API_KEY must not be empty'),
+  LANGFUSE_PUBLIC_KEY: z
+    .string({ required_error: 'LANGFUSE_PUBLIC_KEY is required' })
+    .min(1, 'LANGFUSE_PUBLIC_KEY must not be empty'),
+  LANGFUSE_SECRET_KEY: z
+    .string({ required_error: 'LANGFUSE_SECRET_KEY is required' })
+    .min(1, 'LANGFUSE_SECRET_KEY must not be empty'),
+  // Optional: defaults to Langfuse Cloud's US region. Only needs setting for the EU region
+  // or a self-hosted instance (see specs/00-architecture.md's Phase 8 note).
+  LANGFUSE_BASEURL: z.string().url('LANGFUSE_BASEURL must be a valid URL').optional(),
   PORT: z
     .string({ required_error: 'PORT is required' })
     .min(1, 'PORT must not be empty')

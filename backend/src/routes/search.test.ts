@@ -69,9 +69,13 @@ const sampleLogEntry: SearchLogEntry = {
   ranked_ids: ['a'],
   latency_ms: 180,
   model_calls: {
-    query_understanding: { model: 'claude-haiku-4-5-20251001', succeeded: true },
-    embedding: { model: 'voyage-4' },
-    rerank: { model: 'rerank-2.5', degraded: false },
+    query_understanding: {
+      model: 'claude-haiku-4-5-20251001',
+      succeeded: true,
+      usage: { inputTokens: 40, outputTokens: 20 },
+    },
+    embedding: { model: 'voyage-4', tokens: 8 },
+    rerank: { model: 'rerank-2.5', degraded: false, tokens: 150 },
   },
 };
 

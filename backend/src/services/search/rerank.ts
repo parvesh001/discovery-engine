@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { reserveSlot } from '../voyage/rateLimiter.js';
 import type { RankedCandidate } from './retrieval.js';
+import { recordSpan, type LangfuseParent } from '../observability/langfuse.js';
 
 /**
  * `relevanceScore` is nullable: candidates beyond the 20-item cap sent to Voyage are
@@ -15,6 +16,8 @@ export type RerankedCandidate = RankedCandidate & { relevanceScore: number | nul
 export type RerankOutcome = {
   results: RerankedCandidate[];
   degraded: boolean;
+  /** Voyage's total_tokens for this rerank call, or null if degraded (no real response). */
+  tokens: number | null;
 };
 
 const VOYAGE_RERANK_URL = 'https://api.voyageai.com/v1/rerank';
@@ -29,9 +32,11 @@ const voyageRerankResponseSchema = z.object({
       relevance_score: z.number(),
     }),
   ),
+  usage: z.object({ total_tokens: z.number() }).optional(),
 });
 
-type VoyageRerankResult = z.infer<typeof voyageRerankResponseSchema>['data'][number];
+type VoyageRerankResponse = z.infer<typeof voyageRerankResponseSchema>;
+type VoyageRerankResult = VoyageRerankResponse['data'][number];
 
 export class RerankError extends Error {
   status?: number;
@@ -102,11 +107,9 @@ function validateIndexSet(data: VoyageRerankResult[], documentCount: number): vo
   }
 }
 
-async function callVoyageRerankOnce(
-  query: string,
-  documents: string[],
-  timeoutMs: number,
-): Promise<VoyageRerankResult[]> {
+type VoyageRerankOutcome = { data: VoyageRerankResult[]; tokens: number | null };
+
+async function callVoyageRerankOnce(query: string, documents: string[], timeoutMs: number): Promise<VoyageRerankOutcome> {
   await reserveSlot();
 
   const controller = new AbortController();
@@ -139,7 +142,7 @@ async function callVoyageRerankOnce(
     }
 
     validateIndexSet(parsed.data.data, documents.length);
-    return parsed.data.data;
+    return { data: parsed.data.data, tokens: parsed.data.usage?.total_tokens ?? null };
   } catch (error) {
     if (controller.signal.aborted) {
       throw new RerankError(`Voyage rerank call timed out after ${timeoutMs}ms`);
@@ -154,7 +157,7 @@ async function rerankViaVoyage(
   query: string,
   documents: string[],
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
-): Promise<VoyageRerankResult[]> {
+): Promise<VoyageRerankOutcome> {
   try {
     const result = await callVoyageRerankOnce(query, documents, timeoutMs);
     console.log('[rerank] voyage call succeeded');
@@ -196,6 +199,7 @@ function toFallback(candidates: RankedCandidate[]): RerankOutcome {
   return {
     results: candidates.map((c) => ({ ...c, relevanceScore: null })),
     degraded: true,
+    tokens: null,
   };
 }
 
@@ -212,13 +216,18 @@ function logLatency(startedAt: number, candidateCount: number, degraded: boolean
  * index set — degrades to the original incoming candidate order, unmodified, with
  * degraded: true.
  */
-export async function rerank(query: string, candidates: RankedCandidate[]): Promise<RerankOutcome> {
+export async function rerank(
+  query: string,
+  candidates: RankedCandidate[],
+  langfuseParent?: LangfuseParent | null,
+): Promise<RerankOutcome> {
   const startedAt = Date.now();
+  const startTime = new Date();
   const sentCandidates = selectTopCandidates(candidates);
   const documents = sentCandidates.map(buildRerankDocument);
 
   try {
-    const scored = await rerankViaVoyage(query, documents);
+    const { data: scored, tokens } = await rerankViaVoyage(query, documents);
 
     const scoreByIndex = new Map(scored.map((item) => [item.index, item.relevance_score]));
     const rerankedTop: RerankedCandidate[] = sentCandidates
@@ -240,7 +249,13 @@ export async function rerank(query: string, candidates: RankedCandidate[]): Prom
       .map((c) => ({ ...c, relevanceScore: null }));
 
     logLatency(startedAt, candidates.length, false);
-    return { results: [...rerankedTop, ...unscoredTail], degraded: false };
+    recordSpan(langfuseParent ?? null, {
+      name: 'rerank',
+      input: { model: RERANK_MODEL, candidateCount: documents.length },
+      output: { tokens, candidateCount: sentCandidates.length },
+      startTime,
+    });
+    return { results: [...rerankedTop, ...unscoredTail], degraded: false, tokens };
   } catch (error) {
     console.warn('[rerank] falling back to original order:', error);
     logLatency(startedAt, candidates.length, true);

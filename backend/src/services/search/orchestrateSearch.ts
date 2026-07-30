@@ -4,6 +4,7 @@ import { retrieveCandidates, type Listing } from './retrieval.js';
 import { rerank, RERANK_MODEL } from './rerank.js';
 import { EMBEDDING_MODEL } from '../ingestion/embeddings.js';
 import type { SearchLogEntry } from './searchLogs.js';
+import { startSearchTrace } from '../observability/langfuse.js';
 
 export type SearchResponse = {
   results: Array<Listing & { relevanceScore: number | null }>;
@@ -45,22 +46,31 @@ export class SearchRetrievalError extends Error {
  *    SearchRetrievalError so the route can return the one allowed non-200 response.
  *  - rerank failure: already handled inside rerank() itself, which never throws and
  *    returns { results, degraded: true } instead.
+ *
+ * A single Langfuse trace (spec 09) spans the whole request: query_understanding is a
+ * real Claude generation, embedding and rerank are Voyage spans — all three attached as
+ * children of `trace` so they show up nested under one search in the Langfuse dashboard.
  */
 export async function runSearch(
   pool: pg.Pool,
   rawQuery: string,
 ): Promise<{ response: SearchResponse; logEntry: SearchLogEntry }> {
   const totalStart = Date.now();
+  const trace = startSearchTrace(rawQuery);
 
   const understandingStart = Date.now();
   let intent: QueryIntent;
   let understandingSucceeded: boolean;
+  let understandingUsage: { inputTokens: number; outputTokens: number } | null;
   try {
-    intent = await understandQuery(rawQuery);
+    const result = await understandQuery(rawQuery, trace);
+    intent = result.intent;
+    understandingUsage = result.usage;
     understandingSucceeded = true;
   } catch (error) {
     console.error('[search] understandQuery failed, falling back to raw query as semantic_query:', error);
     intent = { filters: { ...FALLBACK_FILTERS }, semantic_query: rawQuery };
+    understandingUsage = null;
     understandingSucceeded = false;
   }
   const understanding_ms = Date.now() - understandingStart;
@@ -68,7 +78,7 @@ export async function runSearch(
   const retrievalStart = Date.now();
   let retrieval: Awaited<ReturnType<typeof retrieveCandidates>>;
   try {
-    retrieval = await retrieveCandidates(pool, intent);
+    retrieval = await retrieveCandidates(pool, intent, trace);
   } catch (error) {
     console.error('[search] retrieveCandidates failed:', error);
     const partialLogEntry: SearchLogEntry = {
@@ -78,7 +88,7 @@ export async function runSearch(
       ranked_ids: [],
       latency_ms: Date.now() - totalStart,
       model_calls: {
-        query_understanding: { model: QUERY_MODEL, succeeded: understandingSucceeded },
+        query_understanding: { model: QUERY_MODEL, succeeded: understandingSucceeded, usage: understandingUsage },
         embedding: null,
         rerank: null,
         failure: { stage: 'retrieval', error: true },
@@ -89,7 +99,7 @@ export async function runSearch(
   const retrieval_ms = Date.now() - retrievalStart;
 
   const rerankStart = Date.now();
-  const rerankOutcome = await rerank(intent.semantic_query, retrieval.candidates);
+  const rerankOutcome = await rerank(intent.semantic_query, retrieval.candidates, trace);
   const rerank_ms = Date.now() - rerankStart;
 
   const results = rerankOutcome.results.map(({ similarityScore: _similarityScore, ...rest }) => rest);
@@ -109,9 +119,9 @@ export async function runSearch(
     ranked_ids: rerankOutcome.results.map((c) => c.id),
     latency_ms: total_ms,
     model_calls: {
-      query_understanding: { model: QUERY_MODEL, succeeded: understandingSucceeded },
-      embedding: { model: EMBEDDING_MODEL },
-      rerank: { model: RERANK_MODEL, degraded: rerankOutcome.degraded },
+      query_understanding: { model: QUERY_MODEL, succeeded: understandingSucceeded, usage: understandingUsage },
+      embedding: { model: EMBEDDING_MODEL, tokens: retrieval.embeddingTokens },
+      rerank: { model: RERANK_MODEL, degraded: rerankOutcome.degraded, tokens: rerankOutcome.tokens },
     },
   };
 

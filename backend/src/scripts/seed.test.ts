@@ -12,7 +12,7 @@ describe('seedDatabase', () => {
   });
 
   beforeEach(async () => {
-    await pool.query('TRUNCATE TABLE listings');
+    await pool.query('TRUNCATE TABLE listings CASCADE');
   });
 
   it('inserts exactly 35 rows', async () => {

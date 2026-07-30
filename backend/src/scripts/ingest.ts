@@ -1,6 +1,7 @@
 import { loadEnv, type Env } from '../env.js';
 import { createPool } from '../db.js';
 import { runIngestion } from '../services/ingestion/runIngestion.js';
+import { flushLangfuse } from '../services/observability/langfuse.js';
 
 function loadEnvOrExit(): Env {
   try {
@@ -27,6 +28,7 @@ async function main(): Promise<void> {
     process.exitCode = 1;
   } finally {
     await pool.end();
+    await flushLangfuse();
   }
 }
 

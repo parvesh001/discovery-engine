@@ -3,9 +3,13 @@ import pg from 'pg';
 import { getTestDatabaseUrl } from '../../test/testDb.js';
 
 const extractAttributesMock = vi.fn();
-vi.mock('./extraction.js', () => ({
-  extractAttributes: (...args: unknown[]) => extractAttributesMock(...args),
-}));
+vi.mock('./extraction.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./extraction.js')>();
+  return {
+    ...actual,
+    extractAttributes: (...args: unknown[]) => extractAttributesMock(...args),
+  };
+});
 
 const generateEmbeddingMock = vi.fn();
 vi.mock('./embeddings.js', async (importOriginal) => {
@@ -34,7 +38,7 @@ describe('runIngestion', () => {
   });
 
   beforeEach(async () => {
-    await pool.query('TRUNCATE TABLE listings');
+    await pool.query('TRUNCATE TABLE listings CASCADE');
     extractAttributesMock.mockReset();
     generateEmbeddingMock.mockReset();
   });
@@ -51,10 +55,12 @@ describe('runIngestion', () => {
     return row.id;
   }
 
+  const validExtractionResult = { attributes: validAttributes, usage: { inputTokens: 10, outputTokens: 5 } };
+
   it('processes pending listings and writes attributes, embedding, and processed status', async () => {
     await insertListing('Test Listing', 'A nice cabin.');
-    extractAttributesMock.mockResolvedValue(validAttributes);
-    generateEmbeddingMock.mockResolvedValue(new Array(1024).fill(0.1));
+    extractAttributesMock.mockResolvedValue(validExtractionResult);
+    generateEmbeddingMock.mockResolvedValue({ embedding: new Array(1024).fill(0.1), tokens: 42 });
 
     const summary = await runIngestion(pool);
 
@@ -69,6 +75,40 @@ describe('runIngestion', () => {
     expect(rows[0].ingested_at).not.toBeNull();
   });
 
+  it('writes one ingestion_logs row per successful ingestion, with observed token usage', async () => {
+    const listingId = await insertListing('Test Listing', 'A nice cabin.');
+    extractAttributesMock.mockResolvedValue(validExtractionResult);
+    generateEmbeddingMock.mockResolvedValue({ embedding: new Array(1024).fill(0.1), tokens: 42 });
+
+    await runIngestion(pool);
+
+    const { rows } = await pool.query(
+      `SELECT listing_id, extraction_model, extraction_input_tokens, extraction_output_tokens,
+              embedding_model, embedding_tokens, latency_ms
+       FROM ingestion_logs`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      listing_id: listingId,
+      extraction_model: 'claude-haiku-4-5-20251001',
+      extraction_input_tokens: 10,
+      extraction_output_tokens: 5,
+      embedding_model: 'voyage-4',
+      embedding_tokens: 42,
+    });
+    expect(rows[0].latency_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it('does not write an ingestion_logs row when a listing fails to ingest', async () => {
+    await insertListing('Malformed', '');
+    extractAttributesMock.mockRejectedValue(new Error('cannot extract from empty description'));
+
+    await runIngestion(pool);
+
+    const { rows } = await pool.query(`SELECT * FROM ingestion_logs`);
+    expect(rows).toHaveLength(0);
+  });
+
   it('marks a failing listing as failed without halting the rest of the batch', async () => {
     await insertListing('Malformed', '');
     await insertListing('Good Listing', 'A nice place.');
@@ -77,9 +117,9 @@ describe('runIngestion', () => {
       if (rawDescription === '') {
         throw new Error('cannot extract from empty description');
       }
-      return validAttributes;
+      return validExtractionResult;
     });
-    generateEmbeddingMock.mockResolvedValue(new Array(1024).fill(0.1));
+    generateEmbeddingMock.mockResolvedValue({ embedding: new Array(1024).fill(0.1), tokens: 42 });
 
     const summary = await runIngestion(pool);
 
@@ -95,8 +135,8 @@ describe('runIngestion', () => {
 
   it('is a no-op on a second run: zero additional extraction/embedding calls, zero additional writes', async () => {
     await insertListing('Test Listing', 'A nice cabin.');
-    extractAttributesMock.mockResolvedValue(validAttributes);
-    generateEmbeddingMock.mockResolvedValue(new Array(1024).fill(0.1));
+    extractAttributesMock.mockResolvedValue(validExtractionResult);
+    generateEmbeddingMock.mockResolvedValue({ embedding: new Array(1024).fill(0.1), tokens: 42 });
 
     const firstSummary = await runIngestion(pool);
     expect(firstSummary).toEqual({ processed: 1, failed: 0, failedIds: [] });

@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { callClaude } from '../llm/client.js';
+import { callClaude, type ClaudeUsage } from '../llm/client.js';
 import { stripCodeFences } from '../llm/jsonResponse.js';
+import type { LangfuseParent } from '../observability/langfuse.js';
 
 export type QueryIntent = {
   filters: {
@@ -142,39 +143,48 @@ export class QueryUnderstandingError extends Error {
   }
 }
 
-export async function understandQuery(rawQuery: string): Promise<QueryIntent> {
+export type QueryUnderstandingResult = { intent: QueryIntent; usage: ClaudeUsage };
+
+export async function understandQuery(
+  rawQuery: string,
+  langfuseParent?: LangfuseParent | null,
+): Promise<QueryUnderstandingResult> {
   const initialUserMessage = `<user_query>
 ${rawQuery}
 </user_query>`;
 
-  const firstResponse = await callClaude({
+  const first = await callClaude({
     model: QUERY_MODEL,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: initialUserMessage }],
     maxTokens: MAX_TOKENS,
+    stage: 'query_understanding',
+    langfuseParent,
   });
 
-  const firstAttempt = parseAndValidate(firstResponse);
+  const firstAttempt = parseAndValidate(first.text);
   if ('data' in firstAttempt) {
-    return firstAttempt.data;
+    return { intent: firstAttempt.data, usage: first.usage };
   }
 
   console.error(`[queryUnderstanding] validation failed on attempt 1, retrying with error-correction prompt:`, firstAttempt.error);
 
-  const retryResponse = await callClaude({
+  const retry = await callClaude({
     model: QUERY_MODEL,
     system: SYSTEM_PROMPT,
     messages: [
       { role: 'user', content: initialUserMessage },
-      { role: 'assistant', content: firstResponse },
-      { role: 'user', content: buildRetryUserMessage(firstResponse, firstAttempt.error) },
+      { role: 'assistant', content: first.text },
+      { role: 'user', content: buildRetryUserMessage(first.text, firstAttempt.error) },
     ],
     maxTokens: MAX_TOKENS,
+    stage: 'query_understanding',
+    langfuseParent,
   });
 
-  const secondAttempt = parseAndValidate(retryResponse);
+  const secondAttempt = parseAndValidate(retry.text);
   if ('data' in secondAttempt) {
-    return secondAttempt.data;
+    return { intent: secondAttempt.data, usage: retry.usage };
   }
 
   console.error(`[queryUnderstanding] validation failed on attempt 2, giving up:`, secondAttempt.error);

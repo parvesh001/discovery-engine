@@ -27,6 +27,7 @@ const baseOptions = {
   system: 'sys',
   messages: [{ role: 'user' as const, content: 'hi' }],
   maxTokens: 100,
+  stage: 'test_stage',
 };
 
 describe('callClaude', () => {
@@ -34,34 +35,37 @@ describe('callClaude', () => {
     createMock.mockReset();
   });
 
-  it('returns the text content on success', async () => {
-    createMock.mockResolvedValueOnce({ content: [{ type: 'text', text: 'hello' }] });
+  it('returns the text content and token usage on success', async () => {
+    createMock.mockResolvedValueOnce({
+      content: [{ type: 'text', text: 'hello' }],
+      usage: { input_tokens: 12, output_tokens: 3 },
+    });
 
     const result = await callClaude(baseOptions);
 
-    expect(result).toBe('hello');
+    expect(result).toEqual({ text: 'hello', usage: { inputTokens: 12, outputTokens: 3 } });
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 
   it('retries once on a transient (5xx) APIError and succeeds', async () => {
     createMock
       .mockRejectedValueOnce(new FakeAPIError(500, 'server error'))
-      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'ok' }] });
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'ok' }], usage: { input_tokens: 5, output_tokens: 2 } });
 
     const result = await callClaude(baseOptions);
 
-    expect(result).toBe('ok');
+    expect(result).toEqual({ text: 'ok', usage: { inputTokens: 5, outputTokens: 2 } });
     expect(createMock).toHaveBeenCalledTimes(2);
   });
 
   it('retries once on a 429 APIError and succeeds', async () => {
     createMock
       .mockRejectedValueOnce(new FakeAPIError(429, 'rate limited'))
-      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'ok' }] });
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'ok' }], usage: { input_tokens: 5, output_tokens: 2 } });
 
     const result = await callClaude(baseOptions);
 
-    expect(result).toBe('ok');
+    expect(result).toEqual({ text: 'ok', usage: { inputTokens: 5, outputTokens: 2 } });
     expect(createMock).toHaveBeenCalledTimes(2);
   });
 

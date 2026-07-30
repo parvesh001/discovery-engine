@@ -2,6 +2,7 @@ import type pg from 'pg';
 import type { ExtractedAttributes } from '../ingestion/extraction.js';
 import { generateEmbedding } from '../ingestion/embeddings.js';
 import type { QueryIntent } from './queryUnderstanding.js';
+import type { LangfuseParent } from '../observability/langfuse.js';
 
 export type Listing = {
   id: string;
@@ -21,6 +22,7 @@ export type RankedCandidate = Listing & { similarityScore: number };
 export type RetrievalResult = {
   candidates: RankedCandidate[];
   filtersRelaxed: boolean;
+  embeddingTokens: number | null;
 };
 
 /**
@@ -117,8 +119,17 @@ function toRankedCandidate(row: CandidateRow): RankedCandidate {
  * against `getTestDatabaseUrl()` in tests, matching every other DB-touching service in
  * this codebase (`runIngestion(pool)`, `seedDatabase(pool, listings)`).
  */
-export async function retrieveCandidates(pool: pg.Pool, intent: QueryIntent): Promise<RetrievalResult> {
-  const embedding = await generateEmbedding(intent.semantic_query, 'query');
+export async function retrieveCandidates(
+  pool: pg.Pool,
+  intent: QueryIntent,
+  langfuseParent?: LangfuseParent | null,
+): Promise<RetrievalResult> {
+  const { embedding, tokens: embeddingTokens } = await generateEmbedding(
+    intent.semantic_query,
+    'query',
+    undefined,
+    langfuseParent,
+  );
   const embeddingLiteral = `[${embedding.join(',')}]`;
 
   const { clauses, values } = buildFilterClauses(intent.filters);
@@ -128,8 +139,8 @@ export async function retrieveCandidates(pool: pg.Pool, intent: QueryIntent): Pr
 
   if (hasFilters && filteredRows.length < MIN_CANDIDATES_BEFORE_RELAXATION) {
     const relaxedRows = await runCandidateQuery(pool, embeddingLiteral, [], []);
-    return { candidates: relaxedRows.map(toRankedCandidate), filtersRelaxed: true };
+    return { candidates: relaxedRows.map(toRankedCandidate), filtersRelaxed: true, embeddingTokens };
   }
 
-  return { candidates: filteredRows.map(toRankedCandidate), filtersRelaxed: false };
+  return { candidates: filteredRows.map(toRankedCandidate), filtersRelaxed: false, embeddingTokens };
 }

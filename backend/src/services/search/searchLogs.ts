@@ -2,9 +2,13 @@ import type pg from 'pg';
 import type { QueryIntent } from './queryUnderstanding.js';
 
 export type ModelCallsLog = {
-  query_understanding: { model: string; succeeded: boolean };
-  embedding: { model: string } | null;
-  rerank: { model: string; degraded: boolean } | null;
+  query_understanding: {
+    model: string;
+    succeeded: boolean;
+    usage: { inputTokens: number; outputTokens: number } | null;
+  };
+  embedding: { model: string; tokens: number | null } | null;
+  rerank: { model: string; degraded: boolean; tokens: number | null } | null;
   failure?: { stage: 'retrieval'; error: true };
 };
 
