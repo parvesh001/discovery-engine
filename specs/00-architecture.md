@@ -45,7 +45,7 @@ Ingestion-time flow (per listing, on create/update): `raw listing → attribute 
 | LLM | Claude API — Haiku (extraction/query understanding) | Cost-tiered: cheap/fast model for high-frequency small tasks |
 | Reranker | Voyage AI — `rerank-2.5` (re-ranking, Phase 5) | Cross-encoder reranker, ~600ms latency vs. ~30-50s for a generative-model approach tried and rejected during Phase 5 (see `specs/06-reranking.md`); no generated reasoning text, score-only |
 | Queue/Cache | BullMQ + Redis (Phase 9+) | Async ingestion, query caching |
-| Observability | Langfuse (self-hosted) | Full LLM call tracing |
+| Observability | Langfuse (self-hosted) | Full LLM call tracing. *(2026-07-28, Phase 8: started on Langfuse Cloud's free tier instead — no self-hosted instance stood up yet. Self-hosting means adding Postgres/ClickHouse/MinIO/Redis + langfuse-web/worker containers, deferred as a pragmatic first step. Revisit before this goes to a real client engagement.)* |
 | Deployment | Vercel (frontend) + Render (backend + managed Postgres) | Confirmed. Realistic prod topology, cheap tiers sufficient |
 | Source control / CI | GitHub + GitHub Actions | Confirmed |
 

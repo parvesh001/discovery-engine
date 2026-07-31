@@ -1,7 +1,8 @@
 import type pg from 'pg';
 import pLimit from 'p-limit';
-import { extractAttributes } from './extraction.js';
-import { buildEmbeddingInput, generateEmbedding } from './embeddings.js';
+import { extractAttributes, EXTRACTION_MODEL } from './extraction.js';
+import { buildEmbeddingInput, generateEmbedding, EMBEDDING_MODEL } from './embeddings.js';
+import { startIngestionTrace } from '../observability/langfuse.js';
 
 export type IngestionSummary = {
   processed: number;
@@ -17,6 +18,41 @@ type PendingListing = {
   raw_description: string;
 };
 
+type IngestionLogEntry = {
+  listingId: string;
+  extractionInputTokens: number;
+  extractionOutputTokens: number;
+  embeddingTokens: number | null;
+  latencyMs: number;
+};
+
+/**
+ * Awaited (unlike searchLogs.logSearch's fire-and-forget) since ingestion has no
+ * user-facing latency to protect — but never rejects, same try/catch/log pattern, so a
+ * broken log write can never turn a successful ingestion into a reported failure.
+ */
+async function logIngestion(pool: pg.Pool, entry: IngestionLogEntry): Promise<void> {
+  try {
+    await pool.query(
+      `INSERT INTO ingestion_logs
+         (listing_id, extraction_model, extraction_input_tokens, extraction_output_tokens,
+          embedding_model, embedding_tokens, latency_ms)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        entry.listingId,
+        EXTRACTION_MODEL,
+        entry.extractionInputTokens,
+        entry.extractionOutputTokens,
+        EMBEDDING_MODEL,
+        entry.embeddingTokens,
+        entry.latencyMs,
+      ],
+    );
+  } catch (error) {
+    console.error(`[ingestion] failed to write ingestion_logs entry for listing ${entry.listingId}:`, error);
+  }
+}
+
 async function markFailed(pool: pg.Pool, listingId: string): Promise<void> {
   try {
     await pool.query(`UPDATE listings SET ingestion_status = 'failed' WHERE id = $1`, [listingId]);
@@ -26,10 +62,13 @@ async function markFailed(pool: pg.Pool, listingId: string): Promise<void> {
 }
 
 async function ingestListing(pool: pg.Pool, listing: PendingListing): Promise<'processed' | 'failed'> {
+  const startedAt = Date.now();
+  const trace = startIngestionTrace(listing.id);
+
   try {
-    const attributes = await extractAttributes(listing.raw_description);
+    const { attributes, usage: extractionUsage } = await extractAttributes(listing.raw_description, trace);
     const embeddingInput = buildEmbeddingInput(listing.title, listing.raw_description, attributes);
-    const embedding = await generateEmbedding(embeddingInput, 'document');
+    const { embedding, tokens: embeddingTokens } = await generateEmbedding(embeddingInput, 'document', undefined, trace);
     const embeddingLiteral = `[${embedding.join(',')}]`;
 
     await pool.query(
@@ -38,6 +77,15 @@ async function ingestListing(pool: pg.Pool, listing: PendingListing): Promise<'p
        WHERE id = $3`,
       [JSON.stringify(attributes), embeddingLiteral, listing.id],
     );
+
+    await logIngestion(pool, {
+      listingId: listing.id,
+      extractionInputTokens: extractionUsage.inputTokens,
+      extractionOutputTokens: extractionUsage.outputTokens,
+      embeddingTokens,
+      latencyMs: Date.now() - startedAt,
+    });
+
     return 'processed';
   } catch (error) {
     console.error(`[ingestion] listing ${listing.id} failed:`, error);

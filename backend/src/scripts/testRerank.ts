@@ -36,7 +36,7 @@ async function main(): Promise<void> {
     for (const query of SUBJECTIVE_QUERIES) {
       console.log(`\n=== Query: "${query}" ===`);
       try {
-        const intent = await understandQuery(query);
+        const { intent } = await understandQuery(query);
         const { candidates, filtersRelaxed } = await retrieveCandidates(pool, intent);
         if (filtersRelaxed) {
           console.log('(filters were relaxed — too narrow, showing semantic-only ranking)');

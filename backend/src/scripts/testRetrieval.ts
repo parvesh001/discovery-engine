@@ -37,7 +37,7 @@ async function main(): Promise<void> {
     for (const query of sampleQueries) {
       console.log(`\nQuery: "${query}"`);
       try {
-        const intent = await understandQuery(query);
+        const { intent } = await understandQuery(query);
         console.log('Intent:', JSON.stringify(intent));
 
         const { candidates, filtersRelaxed } = await retrieveCandidates(pool, intent);

@@ -1,5 +1,6 @@
 import type { ExtractedAttributes } from './extraction.js';
 import { reserveSlot } from '../voyage/rateLimiter.js';
+import { recordSpan, type LangfuseParent } from '../observability/langfuse.js';
 
 const VOYAGE_EMBEDDINGS_URL = 'https://api.voyageai.com/v1/embeddings';
 export const EMBEDDING_MODEL = 'voyage-4';
@@ -42,13 +43,20 @@ export function buildEmbeddingInput(title: string, rawDescription: string, attri
 
 type VoyageEmbeddingsResponse = {
   data: { embedding: number[] }[];
+  usage?: { total_tokens?: number };
 };
+
+export type EmbeddingResult = { embedding: number[]; tokens: number | null };
 
 function isTransientStatus(status: number): boolean {
   return status >= 500 || status === 429;
 }
 
-async function callVoyageOnce(text: string, inputType: 'document' | 'query', timeoutMs: number): Promise<number[]> {
+async function callVoyageOnce(
+  text: string,
+  inputType: 'document' | 'query',
+  timeoutMs: number,
+): Promise<EmbeddingResult> {
   await reserveSlot();
 
   const controller = new AbortController();
@@ -82,7 +90,7 @@ async function callVoyageOnce(text: string, inputType: 'document' | 'query', tim
     if (!embedding) {
       throw new EmbeddingError('Voyage embeddings response contained no embedding data');
     }
-    return embedding;
+    return { embedding, tokens: json.usage?.total_tokens ?? null };
   } catch (error) {
     if (controller.signal.aborted) {
       throw new EmbeddingError(`Voyage embeddings call timed out after ${timeoutMs}ms`);
@@ -112,11 +120,19 @@ export async function generateEmbedding(
   text: string,
   inputType: 'document' | 'query',
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
-): Promise<number[]> {
+  langfuseParent?: LangfuseParent | null,
+): Promise<EmbeddingResult> {
+  const startTime = new Date();
   try {
-    const embedding = await callVoyageOnce(text, inputType, timeoutMs);
+    const result = await callVoyageOnce(text, inputType, timeoutMs);
     console.log('[embeddings] voyage call succeeded');
-    return embedding;
+    recordSpan(langfuseParent ?? null, {
+      name: 'embedding',
+      input: { inputType, model: EMBEDDING_MODEL },
+      output: { dimensions: result.embedding.length, tokens: result.tokens },
+      startTime,
+    });
+    return result;
   } catch (firstError) {
     console.error('[embeddings] voyage call failed (attempt 1):', firstError);
 
@@ -125,9 +141,15 @@ export async function generateEmbedding(
     }
 
     try {
-      const embedding = await callVoyageOnce(text, inputType, timeoutMs);
+      const result = await callVoyageOnce(text, inputType, timeoutMs);
       console.log('[embeddings] voyage call succeeded on retry');
-      return embedding;
+      recordSpan(langfuseParent ?? null, {
+        name: 'embedding',
+        input: { inputType, model: EMBEDDING_MODEL },
+        output: { dimensions: result.embedding.length, tokens: result.tokens },
+        startTime,
+      });
+      return result;
     } catch (secondError) {
       console.error('[embeddings] voyage call failed (attempt 2, giving up):', secondError);
       throw secondError instanceof EmbeddingError ? secondError : new EmbeddingError(String(secondError));

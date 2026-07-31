@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { callClaude } from '../llm/client.js';
+import { callClaude, type ClaudeUsage } from '../llm/client.js';
 import { stripCodeFences } from '../llm/jsonResponse.js';
+import type { LangfuseParent } from '../observability/langfuse.js';
 
 export type ExtractedAttributes = {
   property_type: string;
@@ -18,7 +19,7 @@ const extractedAttributesSchema = z.object({
   bedrooms_mentioned: z.number().int().nullable(),
 }) satisfies z.ZodType<ExtractedAttributes>;
 
-const EXTRACTION_MODEL = 'claude-haiku-4-5-20251001';
+export const EXTRACTION_MODEL = 'claude-haiku-4-5-20251001';
 const MAX_TOKENS = 512;
 
 const SYSTEM_PROMPT = `You extract structured attributes from short-term rental listing descriptions.
@@ -89,39 +90,48 @@ export class ExtractionError extends Error {
   }
 }
 
-export async function extractAttributes(rawDescription: string): Promise<ExtractedAttributes> {
+export type ExtractionResult = { attributes: ExtractedAttributes; usage: ClaudeUsage };
+
+export async function extractAttributes(
+  rawDescription: string,
+  langfuseParent?: LangfuseParent | null,
+): Promise<ExtractionResult> {
   const initialUserMessage = `<listing_description>
 ${rawDescription}
 </listing_description>`;
 
-  const firstResponse = await callClaude({
+  const first = await callClaude({
     model: EXTRACTION_MODEL,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: initialUserMessage }],
     maxTokens: MAX_TOKENS,
+    stage: 'extraction',
+    langfuseParent,
   });
 
-  const firstAttempt = parseAndValidate(firstResponse);
+  const firstAttempt = parseAndValidate(first.text);
   if ('data' in firstAttempt) {
-    return firstAttempt.data;
+    return { attributes: firstAttempt.data, usage: first.usage };
   }
 
   console.error(`[extraction] validation failed on attempt 1, retrying with error-correction prompt:`, firstAttempt.error);
 
-  const retryResponse = await callClaude({
+  const retry = await callClaude({
     model: EXTRACTION_MODEL,
     system: SYSTEM_PROMPT,
     messages: [
       { role: 'user', content: initialUserMessage },
-      { role: 'assistant', content: firstResponse },
-      { role: 'user', content: buildRetryUserMessage(firstResponse, firstAttempt.error) },
+      { role: 'assistant', content: first.text },
+      { role: 'user', content: buildRetryUserMessage(first.text, firstAttempt.error) },
     ],
     maxTokens: MAX_TOKENS,
+    stage: 'extraction',
+    langfuseParent,
   });
 
-  const secondAttempt = parseAndValidate(retryResponse);
+  const secondAttempt = parseAndValidate(retry.text);
   if ('data' in secondAttempt) {
-    return secondAttempt.data;
+    return { attributes: secondAttempt.data, usage: retry.usage };
   }
 
   console.error(`[extraction] validation failed on attempt 2, giving up:`, secondAttempt.error);
