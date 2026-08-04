@@ -67,6 +67,87 @@ location ILIKE '%' || $n || '%'
 - [ ] Verify case-insensitivity: `"manali"` and `"Manali"` match identically.
 - [ ] A location-narrow query that would return zero/few results still triggers relaxation correctly (existing relaxation logic, verified still works with the new filter added to the WHERE clause).
 
+## Post-Merge Amendment: hard/soft filter tiers in relaxation (`fix/hard-soft-filter-relaxation`)
+
+**Gap:** the relaxation fallback above (and the location amendment before it) treats
+`intent.filters` as one undifferentiated bag — when the filtered result count drops below
+`MIN_CANDIDATES_BEFORE_RELAXATION`, every filter is dropped together, with no distinction
+between them. Real usage surfaced this as a genuine bug, not just a ranking nuance: searching
+"pet friendly houses in Goa" set `filtersRelaxed: true` and dropped `pet_friendly` along with
+`location`, so a listing whose own description states "prohibits pets entirely, no exceptions"
+ranked above genuinely pet-friendly listings. Showing a result that directly contradicts a
+stated dealbreaker isn't broader results, it's actively misleading — a trust problem, not a
+ranking nuance.
+
+**Fix — two filter tiers, not one undifferentiated set:**
+
+- **Hard tier — `pet_friendly`, `max_price`, `min_bedrooms`.** Applied unconditionally, in every
+  query, and **never dropped by relaxation**, even if that leaves the result set thin or empty.
+- **Soft tier — `property_type`, `location`.** Applied when present; **droppable** by relaxation
+  to avoid an empty/thin page.
+
+**Why this split, field by field:**
+
+- `pet_friendly` — the anchoring example. A pet owner cannot book a no-pets unit; showing one
+  isn't a broader interpretation of the search, it's wrong.
+- `max_price` — spec 04's extraction prompt (`queryUnderstanding.ts`) populates this field only
+  from an explicit stated number/comparator, never inferred from soft language like "cheap" or
+  "affordable" (those stay in `semantic_query` instead). So whenever it's non-null, the user
+  stated a real number, not a vibe — the same binary-eligibility shape as `pet_friendly`. Showing
+  a ₹14,000/night villa to someone who said "under ₹2000" is the same category of harm: they
+  cannot act on it.
+- `min_bedrooms` — same reasoning shape: populated only from an explicit stated count ("at least
+  3 bedrooms," "3BR"), never inferred from soft language like "family-sized." When present it
+  states a real physical-capacity floor — the group won't fit in fewer bedrooms. Showing a
+  1-bedroom to someone who said "at least 4 bedrooms" isn't a broader match, it's unusable.
+- `property_type` — an exact-match `ILIKE` against a short label an LLM assigned to free-text
+  prose ("cabin" vs. "cottage" vs. "chalet" vs. "log cabin" — this file's own filter-clause
+  comments already flag the near-synonym risk). This is a vocabulary/labeling-alignment problem,
+  not a stated eligibility requirement; relaxing it recovers from extraction/wording mismatch,
+  it doesn't violate a stated constraint.
+- `location` — already treated as relaxable by the amendment above (substring match against a
+  compound "City, State" column, explicitly documented there as an "honest, labeled fallback").
+  Notably, in the Goa bug report, dropping `location` was never the misleading part — dropping
+  `pet_friendly` was. Consistent with `location` being fundamentally a "broaden the geography"
+  relaxation, not a dealbreaker violation.
+
+**The dividing line, stated as a rule:** fields `queryUnderstanding.ts` populates *only* from an
+explicit, unambiguous statement (a number, a boolean pet requirement) encode real eligibility —
+never soften them. Fields that are inherently label/category matches prone to
+extraction-vocabulary mismatch (a place-name substring, a property-type noun-phrase) are safe to
+relax, because relaxing them recovers from a data/wording problem rather than ignoring what the
+user asked for.
+
+**Interaction with `MIN_CANDIDATES_BEFORE_RELAXATION`:** the threshold value and meaning are
+unchanged (still 5, still "fewer than this triggers a fallback query"). What changes is when
+relaxation is eligible to fire, and what the fallback query drops:
+
+1. Always run one query with every applicable filter (hard + soft) applied via SQL `WHERE`,
+   same as before.
+2. Relaxation is only attempted if soft filters (`property_type` and/or `location`) were actually
+   present in the query *and* the fully-filtered result count is below the threshold. A query
+   with only hard filters and a thin or even empty result set does **not** trigger relaxation —
+   there's nothing soft to drop, so that thin/empty hard-filtered set is returned as-is, with
+   `filtersRelaxed: false`. This is a deliberate behavior change from the original design (which
+   would relax a hard-only thin query down to zero filters).
+3. When relaxation does fire, the fallback query re-runs with only the hard filters — soft
+   filters dropped, hard filters still enforced in SQL. `filtersRelaxed: true`.
+4. No second-level relaxation, ever. If the hard-only fallback is itself still thin or zero rows,
+   that's the final answer — there is no further cascade to drop hard filters too.
+
+## Acceptance Criteria (hard/soft tier amendment)
+
+- [ ] A query combining a hard filter (e.g. `pet_friendly: true`) with a soft filter narrow
+      enough to trigger relaxation (e.g. an unmatched `location`) never returns a listing that
+      fails the hard filter, even though `filtersRelaxed: true`.
+- [ ] Same property verified independently for `max_price` and `min_bedrooms` as the hard filter.
+- [ ] A query with only hard filters and a thin/zero-match result set reports
+      `filtersRelaxed: false` and returns the thin/empty hard-filtered set — it does not fall
+      back to unconstrained semantic ranking.
+- [ ] A query where dropping soft filters still leaves a thin hard-filtered result set does not
+      cascade to a second relaxation — the returned set stays exactly as small as the hard-only
+      query produces, never merging in results that fail a hard constraint.
+
 ## Open Questions Claude Code Should Ask If Unclear
 
 - Exact threshold for "few results" that triggers filter relaxation (spec says <5 — confirm this is the intended number before hardcoding it as a magic constant; put it in a named config value regardless). *(Original question, still applies; no new open questions from this amendment.)*

@@ -42,7 +42,7 @@ async function main(): Promise<void> {
 
         const { candidates, filtersRelaxed } = await retrieveCandidates(pool, intent);
         if (filtersRelaxed) {
-          console.log('(filters were relaxed — too narrow, showing semantic-only ranking)');
+          console.log('(soft filters (property type / location) were too narrow and got relaxed — hard constraints like pet_friendly, max_price, and min_bedrooms are still enforced)');
         }
         for (const candidate of candidates) {
           console.log(`  ${candidate.similarityScore.toFixed(4)}  ${candidate.title}`);
