@@ -63,7 +63,9 @@ export function ResultsColumn({
         <>
           {filtersRelaxed && (
             <p className="mt-3 rounded-md bg-flare/10 px-3 py-2 text-sm text-flare">
-              Showing broader results — your filters were relaxed to avoid an empty page.
+              Showing broader results — we loosened the location/property-type match to avoid an
+              empty page. Your other requirements (like pets, budget, and bedrooms) are still
+              applied.
             </p>
           )}
           {listings && listings.length > 0 ? (

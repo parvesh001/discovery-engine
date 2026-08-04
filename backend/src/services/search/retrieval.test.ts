@@ -282,12 +282,14 @@ describe('retrieveCandidates', () => {
     expect(result.candidates[2]?.similarityScore).toBeCloseTo(-1);
   });
 
-  it('relaxes an over-narrow filter combination that matches zero listings, and reports filtersRelaxed: true', async () => {
-    await insertListing({ title: 'Only Listing A', bedrooms: 1 });
-    await insertListing({ title: 'Only Listing B', bedrooms: 1 });
+  it('relaxes an over-narrow soft filter combination that matches zero listings, and reports filtersRelaxed: true', async () => {
+    await insertListing({ title: 'Only Listing A' });
+    await insertListing({ title: 'Only Listing B' });
 
+    // property_type is soft — this is a valid relaxation trigger. min_bedrooms (hard) would
+    // not be, per 'does not relax when only hard filters are set' below.
     const result = await retrieveCandidates(pool, {
-      filters: { ...emptyFilters, min_bedrooms: 99 },
+      filters: { ...emptyFilters, property_type: 'nonexistent-type' },
       semantic_query: 'a place to stay',
     });
 
@@ -319,11 +321,74 @@ describe('retrieveCandidates', () => {
     });
 
     const result = await retrieveCandidates(pool, {
-      filters: { ...emptyFilters, min_bedrooms: 99 }, // forces relaxation
+      filters: { ...emptyFilters, property_type: 'nonexistent-type' }, // soft filter, forces relaxation
       semantic_query: 'a place to stay',
     });
 
     expect(result.filtersRelaxed).toBe(true);
     expect(result.candidates.map((c) => c.title)).toEqual(['Processed']);
+  });
+
+  describe('hard/soft filter tiers (spec 05 amendment)', () => {
+    it('keeps a hard constraint (pet_friendly) enforced even when a soft filter (location) gets relaxed away — the Goa bug', async () => {
+      await insertListing({
+        title: 'Pet Friendly Elsewhere',
+        location: 'Nowhereville, Elsewhere',
+        extracted_attributes: { ...baseAttributes, pet_friendly: true },
+      });
+      await insertListing({
+        title: 'No Pets Elsewhere',
+        location: 'Nowhereville, Elsewhere',
+        extracted_attributes: { ...baseAttributes, pet_friendly: false },
+      });
+
+      const result = await retrieveCandidates(pool, {
+        filters: { ...emptyFilters, pet_friendly: true, location: 'Nonexistent Region' },
+        semantic_query: 'a place to stay',
+      });
+
+      expect(result.filtersRelaxed).toBe(true); // location (soft) was dropped
+      expect(result.candidates.map((c) => c.title)).toEqual(['Pet Friendly Elsewhere']); // pet_friendly (hard) still enforced
+    });
+
+    it('keeps max_price enforced when a soft filter is relaxed, without cascading to a second (fully unconstrained) relaxation', async () => {
+      await insertListing({ title: 'Affordable Match', location: 'Nowhereville', price_per_night: 50 });
+      await insertListing({ title: 'Too Expensive', location: 'Nowhereville', price_per_night: 5000 });
+
+      const result = await retrieveCandidates(pool, {
+        filters: { ...emptyFilters, max_price: 100, location: 'Nonexistent Region' },
+        semantic_query: 'a place to stay',
+      });
+
+      expect(result.filtersRelaxed).toBe(true);
+      // Only 1 result — below MIN_CANDIDATES_BEFORE_RELAXATION — proves there was no second
+      // relaxation pass: a cascade to zero filters would have also returned 'Too Expensive'.
+      expect(result.candidates.map((c) => c.title)).toEqual(['Affordable Match']);
+    });
+
+    it('keeps min_bedrooms enforced even when a soft filter (location) gets relaxed away', async () => {
+      await insertListing({ title: 'Big Enough', location: 'Nowhereville', bedrooms: 4 });
+      await insertListing({ title: 'Too Small', location: 'Nowhereville', bedrooms: 1 });
+
+      const result = await retrieveCandidates(pool, {
+        filters: { ...emptyFilters, min_bedrooms: 3, location: 'Nonexistent Region' },
+        semantic_query: 'a place to stay',
+      });
+
+      expect(result.filtersRelaxed).toBe(true);
+      expect(result.candidates.map((c) => c.title)).toEqual(['Big Enough']);
+    });
+
+    it('does not relax when only hard filters are set, even if the result set is thin or empty', async () => {
+      await insertListing({ title: 'One Match', bedrooms: 5 });
+
+      const result = await retrieveCandidates(pool, {
+        filters: { ...emptyFilters, min_bedrooms: 99 }, // hard-only, matches nothing — nothing soft to drop
+        semantic_query: 'a place to stay',
+      });
+
+      expect(result.filtersRelaxed).toBe(false);
+      expect(result.candidates).toHaveLength(0);
+    });
   });
 });
