@@ -1,18 +1,9 @@
 import type pg from 'pg';
-import pLimit from 'p-limit';
 import { extractAttributes, EXTRACTION_MODEL } from './extraction.js';
 import { buildEmbeddingInput, generateEmbedding, EMBEDDING_MODEL } from './embeddings.js';
 import { startIngestionTrace } from '../observability/langfuse.js';
 
-export type IngestionSummary = {
-  processed: number;
-  failed: number;
-  failedIds: string[];
-};
-
-const CONCURRENCY = 5;
-
-type PendingListing = {
+export type PendingListing = {
   id: string;
   title: string;
   raw_description: string;
@@ -61,7 +52,14 @@ async function markFailed(pool: pg.Pool, listingId: string): Promise<void> {
   }
 }
 
-async function ingestListing(pool: pg.Pool, listing: PendingListing): Promise<'processed' | 'failed'> {
+/**
+ * Single-listing worker logic (spec 03's extraction+embedding+DB-update+logging pipeline,
+ * unchanged) — the reusable core both the BullMQ worker (worker.ts) and this module's own
+ * tests exercise. As of spec 10, this runs as a BullMQ job processor rather than inside a
+ * synchronous batch loop; concurrency is now BullMQ's Worker concurrency setting, not
+ * p-limit here.
+ */
+export async function ingestListing(pool: pg.Pool, listing: PendingListing): Promise<'processed' | 'failed'> {
   const startedAt = Date.now();
   const trace = startIngestionTrace(listing.id);
 
@@ -92,38 +90,4 @@ async function ingestListing(pool: pg.Pool, listing: PendingListing): Promise<'p
     await markFailed(pool, listing.id);
     return 'failed';
   }
-}
-
-/**
- * Batch ingestion (Phase 2 — synchronous, no queue yet per spec 03's scope).
- * Only ever selects `ingestion_status = 'pending'` rows, so already-`processed`
- * listings are never re-selected and a second run makes zero API calls.
- */
-export async function runIngestion(pool: pg.Pool): Promise<IngestionSummary> {
-  const { rows } = await pool.query<PendingListing>(
-    `SELECT id, title, raw_description FROM listings WHERE ingestion_status = 'pending'`,
-  );
-
-  const limit = pLimit(CONCURRENCY);
-  const failedIds: string[] = [];
-  let processed = 0;
-  let failed = 0;
-
-  await Promise.all(
-    rows.map((listing) =>
-      limit(async () => {
-        const outcome = await ingestListing(pool, listing);
-        if (outcome === 'processed') {
-          processed += 1;
-        } else {
-          failed += 1;
-          failedIds.push(listing.id);
-        }
-      }),
-    ),
-  );
-
-  const summary: IngestionSummary = { processed, failed, failedIds };
-  console.log(`[ingestion] complete: processed=${processed} failed=${failed} failedIds=${JSON.stringify(failedIds)}`);
-  return summary;
 }

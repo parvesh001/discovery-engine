@@ -20,7 +20,7 @@ vi.mock('./embeddings.js', async (importOriginal) => {
   };
 });
 
-import { runIngestion } from './runIngestion.js';
+import { ingestListing } from './runIngestion.js';
 
 const validAttributes = {
   property_type: 'cabin',
@@ -30,7 +30,12 @@ const validAttributes = {
   bedrooms_mentioned: null,
 };
 
-describe('runIngestion', () => {
+// ingestListing (spec 10) is the single-listing worker logic BullMQ's Worker (worker.ts)
+// now dispatches jobs to, replacing the old synchronous batch runIngestion(). Batch-level
+// concerns — which rows count as "pending", not re-selecting already-processed listings —
+// moved to queue.test.ts's coverage of enqueuePendingListings, since ingestListing itself
+// never selects rows; it's handed one listing per call.
+describe('ingestListing', () => {
   const pool = new pg.Pool({ connectionString: getTestDatabaseUrl() });
 
   afterAll(async () => {
@@ -57,17 +62,18 @@ describe('runIngestion', () => {
 
   const validExtractionResult = { attributes: validAttributes, usage: { inputTokens: 10, outputTokens: 5 } };
 
-  it('processes pending listings and writes attributes, embedding, and processed status', async () => {
-    await insertListing('Test Listing', 'A nice cabin.');
+  it('processes a listing and writes attributes, embedding, and processed status', async () => {
+    const listingId = await insertListing('Test Listing', 'A nice cabin.');
     extractAttributesMock.mockResolvedValue(validExtractionResult);
     generateEmbeddingMock.mockResolvedValue({ embedding: new Array(1024).fill(0.1), tokens: 42 });
 
-    const summary = await runIngestion(pool);
+    const outcome = await ingestListing(pool, { id: listingId, title: 'Test Listing', raw_description: 'A nice cabin.' });
 
-    expect(summary).toEqual({ processed: 1, failed: 0, failedIds: [] });
+    expect(outcome).toBe('processed');
 
     const { rows } = await pool.query(
-      `SELECT ingestion_status, extracted_attributes, embedding, ingested_at FROM listings`,
+      `SELECT ingestion_status, extracted_attributes, embedding, ingested_at FROM listings WHERE id = $1`,
+      [listingId],
     );
     expect(rows[0].ingestion_status).toBe('processed');
     expect(rows[0].extracted_attributes).toEqual(validAttributes);
@@ -80,7 +86,7 @@ describe('runIngestion', () => {
     extractAttributesMock.mockResolvedValue(validExtractionResult);
     generateEmbeddingMock.mockResolvedValue({ embedding: new Array(1024).fill(0.1), tokens: 42 });
 
-    await runIngestion(pool);
+    await ingestListing(pool, { id: listingId, title: 'Test Listing', raw_description: 'A nice cabin.' });
 
     const { rows } = await pool.query(
       `SELECT listing_id, extraction_model, extraction_input_tokens, extraction_output_tokens,
@@ -99,19 +105,24 @@ describe('runIngestion', () => {
     expect(rows[0].latency_ms).toBeGreaterThanOrEqual(0);
   });
 
-  it('does not write an ingestion_logs row when a listing fails to ingest', async () => {
-    await insertListing('Malformed', '');
+  it('does not write an ingestion_logs row, and marks the listing failed, when extraction fails', async () => {
+    const listingId = await insertListing('Malformed', '');
     extractAttributesMock.mockRejectedValue(new Error('cannot extract from empty description'));
 
-    await runIngestion(pool);
+    const outcome = await ingestListing(pool, { id: listingId, title: 'Malformed', raw_description: '' });
 
-    const { rows } = await pool.query(`SELECT * FROM ingestion_logs`);
-    expect(rows).toHaveLength(0);
+    expect(outcome).toBe('failed');
+
+    const { rows: logRows } = await pool.query(`SELECT * FROM ingestion_logs`);
+    expect(logRows).toHaveLength(0);
+
+    const { rows: listingRows } = await pool.query(`SELECT ingestion_status FROM listings WHERE id = $1`, [listingId]);
+    expect(listingRows[0].ingestion_status).toBe('failed');
   });
 
-  it('marks a failing listing as failed without halting the rest of the batch', async () => {
-    await insertListing('Malformed', '');
-    await insertListing('Good Listing', 'A nice place.');
+  it('processes listings independently — one failing does not affect another call for a different listing', async () => {
+    const failingId = await insertListing('Malformed', '');
+    const goodId = await insertListing('Good Listing', 'A nice place.');
 
     extractAttributesMock.mockImplementation(async (rawDescription: string) => {
       if (rawDescription === '') {
@@ -121,32 +132,17 @@ describe('runIngestion', () => {
     });
     generateEmbeddingMock.mockResolvedValue({ embedding: new Array(1024).fill(0.1), tokens: 42 });
 
-    const summary = await runIngestion(pool);
+    const [failingOutcome, goodOutcome] = await Promise.all([
+      ingestListing(pool, { id: failingId, title: 'Malformed', raw_description: '' }),
+      ingestListing(pool, { id: goodId, title: 'Good Listing', raw_description: 'A nice place.' }),
+    ]);
 
-    expect(summary.processed).toBe(1);
-    expect(summary.failed).toBe(1);
-    expect(summary.failedIds).toHaveLength(1);
+    expect(failingOutcome).toBe('failed');
+    expect(goodOutcome).toBe('processed');
 
     const { rows } = await pool.query(`SELECT title, ingestion_status FROM listings ORDER BY title`);
     const statusByTitle = Object.fromEntries(rows.map((row) => [row.title, row.ingestion_status]));
     expect(statusByTitle['Good Listing']).toBe('processed');
     expect(statusByTitle['Malformed']).toBe('failed');
-  });
-
-  it('is a no-op on a second run: zero additional extraction/embedding calls, zero additional writes', async () => {
-    await insertListing('Test Listing', 'A nice cabin.');
-    extractAttributesMock.mockResolvedValue(validExtractionResult);
-    generateEmbeddingMock.mockResolvedValue({ embedding: new Array(1024).fill(0.1), tokens: 42 });
-
-    const firstSummary = await runIngestion(pool);
-    expect(firstSummary).toEqual({ processed: 1, failed: 0, failedIds: [] });
-    expect(extractAttributesMock).toHaveBeenCalledTimes(1);
-    expect(generateEmbeddingMock).toHaveBeenCalledTimes(1);
-
-    const secondSummary = await runIngestion(pool);
-
-    expect(secondSummary).toEqual({ processed: 0, failed: 0, failedIds: [] });
-    expect(extractAttributesMock).toHaveBeenCalledTimes(1);
-    expect(generateEmbeddingMock).toHaveBeenCalledTimes(1);
   });
 });
