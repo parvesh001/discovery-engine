@@ -46,4 +46,21 @@ The line between a demo and something a paying client can put in front of real u
 
 ## Open Questions Claude Code Should Ask If Unclear
 
-- Since no auth system exists yet, confirm how the "authenticated vs anonymous" rate limit tier should be stubbed (e.g. treat all traffic as anonymous for now) rather than silently inventing a fake auth check.
+- ~~Since no auth system exists yet, confirm how the "authenticated vs anonymous" rate limit tier should be stubbed (e.g. treat all traffic as anonymous for now) rather than silently inventing a fake auth check.~~ **Resolved:** treat all traffic as anonymous (20/min). The authenticated tier (60/min) is implemented and unit-tested but nothing in the app currently triggers it — dormant until a real auth phase exists.
+
+## Post-Merge Amendment (decided during Phase 9's own implementation planning — cache key scope)
+
+**Gap:** requirement 3 specifies the cache is "keyed on normalized query text + filter combination." In this architecture `filters` is not an independent input — the `/api/search` request body is just `{ query: string }` (`backend/src/routes/search.ts`'s `searchRequestSchema`); filters are derived *from* the query text by `understandQuery()` (a Claude call), never supplied alongside it. So there are exactly two points a cache check could sit:
+
+- **Before `understandQuery` runs** — the only key material that exists yet is the raw query text. This is also the only point where a hit skips the Claude call entirely.
+- **After `understandQuery` runs** — `filters` would be available to key on too, but the Claude call has already been paid for, so a hit would only save Voyage/retrieval cost.
+
+The non-functional requirement ("cache hit must measurably reduce both latency **and LLM API cost**") only holds if the cache check happens *before* understanding runs — which means there is no separate `filters` value in scope to key on at that point, by construction of this architecture, not by omission.
+
+**Fix:** cache key is `search:v1:<normalizeQuery(rawQuery)>` — normalized query text only, checked before `understandQuery` is called. No separate filter component today.
+
+**Trade-off accepted:** since `filters` is currently a deterministic function of the query text (no independent filter input exists), "same query text, different filter combination" cannot occur yet, so this loses no real cache correctness today. If a later phase adds a client-settable filter input independent of free text (e.g. a UI facet sidebar), the cache key must be revisited then, since only at that point would two requests share query text but differ in filters.
+
+## Acceptance Criteria (amendment)
+
+- [ ] Cache key derivation (`normalizeQuery` + `search:v1:` prefix) documented and implemented as the sole key, with no separate filters component — confirmed this matches the reasoning above, not an unreviewed simplification.
