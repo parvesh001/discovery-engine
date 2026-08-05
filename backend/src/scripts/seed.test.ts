@@ -15,12 +15,12 @@ describe('seedDatabase', () => {
     await pool.query('TRUNCATE TABLE listings CASCADE');
   });
 
-  it('inserts exactly 35 rows', async () => {
+  it('inserts exactly 36 rows', async () => {
     const count = await seedDatabase(pool);
 
-    expect(count).toBe(35);
+    expect(count).toBe(36);
     const result = await pool.query('SELECT count(*) FROM listings');
-    expect(Number(result.rows[0].count)).toBe(35);
+    expect(Number(result.rows[0].count)).toBe(36);
   });
 
   it('leaves extracted_attributes and embedding NULL, and ingestion_status defaulted to pending', async () => {
@@ -29,15 +29,15 @@ describe('seedDatabase', () => {
     const result = await pool.query(
       "SELECT count(*) FROM listings WHERE ingestion_status = 'pending' AND extracted_attributes IS NULL AND embedding IS NULL",
     );
-    expect(Number(result.rows[0].count)).toBe(35);
+    expect(Number(result.rows[0].count)).toBe(36);
   });
 
-  it('is idempotent: running twice in a row results in exactly 35 rows, not 70', async () => {
+  it('is idempotent: running twice in a row results in exactly 36 rows, not 72', async () => {
     await seedDatabase(pool);
     await seedDatabase(pool);
 
     const result = await pool.query('SELECT count(*) FROM listings');
-    expect(Number(result.rows[0].count)).toBe(35);
+    expect(Number(result.rows[0].count)).toBe(36);
   });
 
   it('accepts an injected listing set for isolated testing', async () => {

@@ -5,6 +5,7 @@ import { rerank, RERANK_MODEL } from './rerank.js';
 import { EMBEDDING_MODEL } from '../ingestion/embeddings.js';
 import type { SearchLogEntry } from './searchLogs.js';
 import { startSearchTrace } from '../observability/langfuse.js';
+import { sanitizeQuery } from './querySanitization.js';
 
 export type SearchResponse = {
   results: Array<Listing & { relevanceScore: number | null }>;
@@ -58,18 +59,25 @@ export async function runSearch(
   const totalStart = Date.now();
   const trace = startSearchTrace(rawQuery);
 
+  // Sanitized once, at this single choke point, before the query reaches any LLM call
+  // (CLAUDE.md rule #4 / spec 10) — including the understandQuery failure fallback below,
+  // which otherwise passes the raw string straight through as semantic_query. `rawQuery`
+  // itself is left untouched for logging/response fidelity; only `sanitizedQuery` feeds
+  // Claude/Voyage from here on.
+  const { sanitized: sanitizedQuery } = sanitizeQuery(rawQuery);
+
   const understandingStart = Date.now();
   let intent: QueryIntent;
   let understandingSucceeded: boolean;
   let understandingUsage: { inputTokens: number; outputTokens: number } | null;
   try {
-    const result = await understandQuery(rawQuery, trace);
+    const result = await understandQuery(sanitizedQuery, trace);
     intent = result.intent;
     understandingUsage = result.usage;
     understandingSucceeded = true;
   } catch (error) {
     console.error('[search] understandQuery failed, falling back to raw query as semantic_query:', error);
-    intent = { filters: { ...FALLBACK_FILTERS }, semantic_query: rawQuery };
+    intent = { filters: { ...FALLBACK_FILTERS }, semantic_query: sanitizedQuery };
     understandingUsage = null;
     understandingSucceeded = false;
   }
