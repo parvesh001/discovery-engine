@@ -38,7 +38,7 @@ export function searchRouter(pool: pg.Pool, redis: Redis, rateLimiterOverrides?:
     }
 
     try {
-      const { response, logEntry } = await runSearch(pool, parseResult.data.query);
+      const { response, logEntry } = await runSearch(pool, parseResult.data.query, redis);
       res.status(200).json(response);
       void logSearch(pool, logEntry);
     } catch (error) {

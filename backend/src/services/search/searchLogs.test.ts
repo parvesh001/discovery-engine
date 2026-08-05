@@ -31,6 +31,7 @@ describe('logSearch', () => {
       },
       embedding: { model: 'voyage-4', tokens: 8 },
       rerank: { model: 'rerank-2.5', degraded: false, tokens: 150 },
+      cache: { hit: false },
     },
   };
 
@@ -69,6 +70,7 @@ describe('logSearch', () => {
         embedding: null,
         rerank: null,
         failure: { stage: 'retrieval', error: true },
+        cache: { hit: false },
       },
     };
 

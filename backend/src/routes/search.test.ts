@@ -87,6 +87,7 @@ const sampleLogEntry: SearchLogEntry = {
     },
     embedding: { model: 'voyage-4', tokens: 8 },
     rerank: { model: 'rerank-2.5', degraded: false, tokens: 150 },
+    cache: { hit: false },
   },
 };
 
@@ -107,7 +108,7 @@ describe('POST /api/search', () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(sampleResponse);
-    expect(runSearchMock).toHaveBeenCalledWith(pool, 'cozy cabin');
+    expect(runSearchMock).toHaveBeenCalledWith(pool, 'cozy cabin', redis);
 
     await vi.waitFor(() => expect(logSearchMock).toHaveBeenCalledWith(pool, sampleLogEntry));
   });

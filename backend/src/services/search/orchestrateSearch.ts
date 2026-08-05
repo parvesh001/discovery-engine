@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import type { Redis } from 'ioredis';
 import { understandQuery, QUERY_MODEL, type QueryIntent } from './queryUnderstanding.js';
 import { retrieveCandidates, type Listing } from './retrieval.js';
 import { rerank, RERANK_MODEL } from './rerank.js';
@@ -6,6 +7,7 @@ import { EMBEDDING_MODEL } from '../ingestion/embeddings.js';
 import type { SearchLogEntry } from './searchLogs.js';
 import { startSearchTrace } from '../observability/langfuse.js';
 import { sanitizeQuery } from './querySanitization.js';
+import { getCachedSearch, setCachedSearch } from '../cache/searchCache.js';
 
 export type SearchResponse = {
   results: Array<Listing & { relevanceScore: number | null }>;
@@ -55,8 +57,40 @@ export class SearchRetrievalError extends Error {
 export async function runSearch(
   pool: pg.Pool,
   rawQuery: string,
+  redis: Redis,
 ): Promise<{ response: SearchResponse; logEntry: SearchLogEntry }> {
   const totalStart = Date.now();
+
+  // Checked before anything else — including before sanitizeQuery/understandQuery — so a
+  // hit skips Claude *and* Voyage entirely (spec 10, requirement 3's NFR: a cache hit must
+  // reduce LLM API cost, not just latency). See the spec's Post-Merge Amendment (cache key
+  // scope) for why the key is normalized query text alone.
+  const cached = await getCachedSearch(redis, rawQuery);
+  if (cached) {
+    const total_ms = Date.now() - totalStart;
+    const resultIds = cached.response.results.map((r) => r.id);
+    const response: SearchResponse = {
+      ...cached.response,
+      // The cached timing reflects whatever run originally populated this entry — replaced
+      // here with this request's actual (near-zero) latency, not stale numbers.
+      timing: { understanding_ms: 0, retrieval_ms: 0, rerank_ms: 0, total_ms },
+    };
+    const logEntry: SearchLogEntry = {
+      raw_query: rawQuery,
+      extracted_intent: cached.intent,
+      candidate_ids: resultIds,
+      ranked_ids: resultIds,
+      latency_ms: total_ms,
+      model_calls: {
+        query_understanding: { model: QUERY_MODEL, succeeded: true, usage: null },
+        embedding: null,
+        rerank: null,
+        cache: { hit: true },
+      },
+    };
+    return { response, logEntry };
+  }
+
   const trace = startSearchTrace(rawQuery);
 
   // Sanitized once, at this single choke point, before the query reaches any LLM call
@@ -100,6 +134,7 @@ export async function runSearch(
         embedding: null,
         rerank: null,
         failure: { stage: 'retrieval', error: true },
+        cache: { hit: false },
       },
     };
     throw new SearchRetrievalError(error, partialLogEntry);
@@ -130,8 +165,16 @@ export async function runSearch(
       query_understanding: { model: QUERY_MODEL, succeeded: understandingSucceeded, usage: understandingUsage },
       embedding: { model: EMBEDDING_MODEL, tokens: retrieval.embeddingTokens },
       rerank: { model: RERANK_MODEL, degraded: rerankOutcome.degraded, tokens: rerankOutcome.tokens },
+      cache: { hit: false },
     },
   };
+
+  // Only a clean success is cached — a degraded rerank or a fallen-back understanding
+  // stage reflects a transient failure, and caching that for 10 minutes would replay it to
+  // every repeated query in that window instead of letting the next request retry cleanly.
+  if (understandingSucceeded && !rerankOutcome.degraded) {
+    await setCachedSearch(redis, rawQuery, { response, intent });
+  }
 
   return { response, logEntry };
 }
