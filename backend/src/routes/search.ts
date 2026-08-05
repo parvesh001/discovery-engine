@@ -1,10 +1,11 @@
 import { Router } from 'express';
-import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import type pg from 'pg';
+import type { Redis } from 'ioredis';
 import { runSearch, SearchRetrievalError } from '../services/search/orchestrateSearch.js';
 import { logSearch } from '../services/search/searchLogs.js';
 import { naiveSearchListings } from '../services/search/naiveSearch.js';
+import { createRateLimiters, rateLimitMiddleware, type RateLimiterOverrides } from '../services/rateLimit/rateLimiter.js';
 
 const MAX_QUERY_LENGTH = 200;
 
@@ -22,17 +23,11 @@ const naiveSearchQuerySchema = z.object({
     .max(MAX_QUERY_LENGTH, `q must be at most ${MAX_QUERY_LENGTH} characters`),
 });
 
-const DEFAULT_RATE_LIMIT = { windowMs: 60_000, limit: 30 };
-
-export function searchRouter(pool: pg.Pool, rateLimitOptions?: { windowMs: number; max: number }): Router {
+export function searchRouter(pool: pg.Pool, redis: Redis, rateLimiterOverrides?: RateLimiterOverrides): Router {
   const router = Router();
 
-  const limiter = rateLimit({
-    windowMs: rateLimitOptions?.windowMs ?? DEFAULT_RATE_LIMIT.windowMs,
-    limit: rateLimitOptions?.max ?? DEFAULT_RATE_LIMIT.limit,
-    standardHeaders: true,
-    legacyHeaders: false,
-  });
+  const limiters = createRateLimiters(redis, rateLimiterOverrides);
+  const limiter = rateLimitMiddleware(limiters);
 
   router.post('/api/search', limiter, async (req, res) => {
     const parseResult = searchRequestSchema.safeParse(req.body);

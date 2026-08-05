@@ -3,6 +3,7 @@ import path from 'node:path';
 import request from 'supertest';
 import { loadEnv, type Env } from '../env.js';
 import { createPool } from '../db.js';
+import { createRedisClient } from '../services/redis/client.js';
 import { createApp } from '../app.js';
 import { flushLangfuse } from '../services/observability/langfuse.js';
 import { writeReportSection } from './reportWriter.js';
@@ -112,7 +113,12 @@ async function main(): Promise<void> {
   await import('dotenv/config');
   const env = loadEnvOrExit();
   const pool = createPool(env.DATABASE_URL);
-  const app = createApp(pool);
+  const redis = createRedisClient(env.REDIS_URL);
+  // The eval harness fires more requests in quick succession than the anonymous 20/min
+  // tier allows (spec 10) — it's a trusted internal tool exercising pipeline correctness,
+  // not real anonymous traffic, so it gets a generous override rather than tripping its
+  // own rate limiter partway through a run.
+  const app = createApp(pool, redis, { rateLimiterOverrides: { anonymousPoints: 10_000 } });
 
   console.log(`Running ${testCases.length} eval cases against the live pipeline (real /api/search calls)...\n`);
 
@@ -138,6 +144,7 @@ async function main(): Promise<void> {
   console.log(`\nWrote eval results to ${REPORT_PATH}`);
 
   await pool.end();
+  redis.disconnect();
   await flushLangfuse();
 
   if (passRate < PASS_RATE_THRESHOLD) {

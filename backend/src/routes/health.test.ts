@@ -3,14 +3,18 @@ import request from 'supertest';
 import pg from 'pg';
 import { createApp } from '../app.js';
 import { getTestDatabaseUrl } from '../test/testDb.js';
+import { getTestRedisUrl } from '../test/testRedis.js';
+import { createRedisClient } from '../services/redis/client.js';
 
 describe('GET /health', () => {
   describe('when the database is reachable', () => {
     const pool = new pg.Pool({ connectionString: getTestDatabaseUrl() });
-    const app = createApp(pool);
+    const redis = createRedisClient(getTestRedisUrl());
+    const app = createApp(pool, redis);
 
     afterAll(async () => {
       await pool.end();
+      redis.disconnect();
     });
 
     it('returns 200 with status ok and db connected', async () => {
@@ -26,10 +30,12 @@ describe('GET /health', () => {
       connectionString: 'postgresql://postgres:postgres@localhost:1/discovery_engine',
       connectionTimeoutMillis: 500,
     });
-    const app = createApp(pool);
+    const redis = createRedisClient(getTestRedisUrl());
+    const app = createApp(pool, redis);
 
     afterAll(async () => {
       await pool.end();
+      redis.disconnect();
     });
 
     it('returns 503 with a descriptive error instead of crashing', async () => {
