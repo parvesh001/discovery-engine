@@ -22,7 +22,8 @@
     "test:retrieval": "tsx src/scripts/testRetrieval.ts",
     "test:rerank": "tsx src/scripts/testRerank.ts",
     "eval": "tsx src/evals/runEvals.ts",
-    "cost-model": "tsx src/scripts/costModel.ts"
+    "cost-model": "tsx src/scripts/costModel.ts",
+    "loadtest": "tsx src/scripts/loadtest.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.4",
@@ -44,6 +45,7 @@
     "@types/supertest": "^6.0.2",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
+    "autocannon": "^8.0.0",
     "eslint-config-prettier": "^9.1.0",
     "node-pg-migrate": "^9.0.0",
     "supertest": "^7.0.0",
