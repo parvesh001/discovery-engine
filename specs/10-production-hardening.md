@@ -64,3 +64,17 @@ The non-functional requirement ("cache hit must measurably reduce both latency *
 ## Acceptance Criteria (amendment)
 
 - [ ] Cache key derivation (`normalizeQuery` + `search:v1:` prefix) documented and implemented as the sole key, with no separate filters component — confirmed this matches the reasoning above, not an unreviewed simplification.
+
+## Post-Merge Amendment (decided during Phase 9's own implementation review — job-level retries)
+
+**Gap:** requirement 4's `worker.ts` correctly re-throws when `ingestListing` reports `'failed'`, so BullMQ classifies the job as failed rather than completed — but nothing configured how many times BullMQ should *attempt* the job. BullMQ's own default (confirmed against the installed `bullmq` source, not assumed) is effectively one attempt, no retry, regardless of whether the failure was permanent or transient. So a Claude timeout or a brief Voyage outage during ingestion got exactly the same one-shot treatment as a genuinely bad listing — the re-throw made the failure visible to BullMQ, but nothing was done with that visibility.
+
+**Fix:** `createIngestionQueue` (`backend/src/services/ingestion/queue.ts`) now sets `defaultJobOptions: { attempts: 2, backoff: { type: 'exponential', delay: 5000 } }` on the `Queue` itself, so every job added via `enqueuePendingListings` inherits it without each call site needing to repeat it. This is a *slower* safety net than the retry already inside `callClaude`/`generateEmbedding` (CLAUDE.md rule #3) — those retry near-instantly within a single call; this retries the whole job again ~5s later, which is a more realistic window for a provider outage to actually clear.
+
+**Retry-stacking, stated explicitly so "attempts: 2" isn't misread as "tried twice":** each BullMQ attempt runs `ingestListing`, which internally already gives extraction (Claude) and embedding (Voyage) their own up-to-2-attempts each. So the true worst-case call count before a listing is permanently marked failed is 2 (BullMQ attempts) × 4 (2 Claude + 2 Voyage attempts per `ingestListing` call) = up to 8 real API calls, not 2. Same layered-retry shape as any retry-wrapping-a-retry design — worth stating plainly rather than leaving "attempts: 2" to imply something smaller than what actually happens.
+
+**Trade-off accepted:** `attempts: 2` (one retry) rather than higher — a listing that fails twice in a row, ~5s apart, is more likely a genuinely bad listing (e.g. empty/malformed description) than a still-recovering outage, and retrying indefinitely would delay `ingestion_status = 'failed'` from ever becoming visible for those genuine failures. Revisit if real usage shows outages routinely outlasting single-digit seconds.
+
+## Acceptance Criteria (amendment)
+
+- [ ] A job whose processor fails once and succeeds on the next attempt ends up `completed` in BullMQ (and, in the real pipeline, `ingestion_status = 'processed'` in Postgres) — not stuck failed after a single try. Verified by test (`queue.test.ts`).

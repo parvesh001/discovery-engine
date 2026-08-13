@@ -1,10 +1,10 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import pg from 'pg';
-import type { Queue } from 'bullmq';
+import { Worker, type Queue } from 'bullmq';
 import { getTestDatabaseUrl } from '../../test/testDb.js';
 import { getTestRedisUrl } from '../../test/testRedis.js';
 import { createRedisClient } from '../redis/client.js';
-import { createIngestionQueue, enqueuePendingListings } from './queue.js';
+import { createIngestionQueue, enqueuePendingListings, INGESTION_QUEUE_NAME } from './queue.js';
 import type { PendingListing } from './runIngestion.js';
 
 describe('enqueuePendingListings', () => {
@@ -82,4 +82,62 @@ describe('enqueuePendingListings', () => {
     const jobs = await queue.getJobs(['waiting']);
     expect(jobs).toHaveLength(0);
   });
+});
+
+// Confirmed decision (spec 10 Post-Merge Amendment, job-level retries): createIngestionQueue
+// sets defaultJobOptions to attempts: 2 with a 5s exponential backoff, so a job that fails
+// once (a transient issue that outlasts the fast internal retry already inside
+// callClaude/generateEmbedding) still gets a second, later-spaced attempt instead of sitting
+// permanently failed after one try. This uses a fake processor (not the real ingestListing
+// pipeline, which is already covered elsewhere) to isolate and prove BullMQ's retry
+// mechanics alone, driven by the real createIngestionQueue configuration.
+describe('createIngestionQueue — job-level retry', () => {
+  const retryConnection = createRedisClient(getTestRedisUrl(), { maxRetriesPerRequest: null });
+
+  beforeEach(async () => {
+    await retryConnection.flushdb();
+  });
+
+  afterAll(() => {
+    retryConnection.disconnect();
+  });
+
+  it(
+    'a job that fails on its first attempt is retried and ends up completed, not stuck failed after one try',
+    async () => {
+      const queue = createIngestionQueue(retryConnection);
+      const listing: PendingListing = { id: 'retry-test-listing', title: 'Retry Test', raw_description: 'desc' };
+
+      let attemptCount = 0;
+      const worker = new Worker<PendingListing>(
+        INGESTION_QUEUE_NAME,
+        async () => {
+          attemptCount += 1;
+          if (attemptCount === 1) {
+            throw new Error('simulated transient failure (e.g. a brief Claude/Voyage outage)');
+          }
+          return 'processed';
+        },
+        { connection: retryConnection, concurrency: 1 },
+      );
+
+      try {
+        const completed = new Promise<void>((resolve) => {
+          worker.on('completed', () => resolve());
+        });
+
+        await queue.add('ingest-listing', listing, { jobId: listing.id });
+        // The real 5s backoff delay (defaultJobOptions) has to actually elapse here — this
+        // is the true configured behavior, not a shortened test double of it.
+        await completed;
+
+        // Proves a retry genuinely happened — a first-try success would leave this at 1.
+        expect(attemptCount).toBe(2);
+      } finally {
+        await worker.close();
+        await queue.close();
+      }
+    },
+    15_000,
+  );
 });
