@@ -20,6 +20,8 @@ export type NaiveColumnState =
   | { status: 'success'; data: NaiveSearchResponse };
 
 const GENERIC_FETCH_ERROR = "Couldn't reach the search backend.";
+const RATE_LIMIT_ERROR =
+  "You're searching a bit too quickly. Please wait a moment and try again.";
 
 export function useSearch() {
   const [query, setQuery] = useState('');
@@ -58,6 +60,13 @@ export function useSearch() {
         body: JSON.stringify({ query: trimmed }),
       })
         .then(async (response) => {
+          // Rate limiter (backend spec 10, req. 2) returns 429 with a non-SearchResponse
+          // body — check status before parsing so it gets its own message, not the generic
+          // "couldn't load" fallback meant for genuinely malformed responses.
+          if (response.status === 429) {
+            setAi({ status: 'error', message: RATE_LIMIT_ERROR });
+            return;
+          }
           const body: unknown = await response.json().catch(() => undefined);
           if (!response.ok || !isSearchResponse(body)) {
             setAi({ status: 'error', message: "Couldn't load AI results." });
@@ -69,6 +78,11 @@ export function useSearch() {
 
       const naiveRequest = fetch(`${BACKEND_URL}/api/search/naive?q=${encodeURIComponent(trimmed)}`)
         .then(async (response) => {
+          // Shares the search rate limiter, so a 429 lands here too — same distinct message.
+          if (response.status === 429) {
+            setNaive({ status: 'error', message: RATE_LIMIT_ERROR });
+            return;
+          }
           const body: unknown = await response.json().catch(() => undefined);
           if (!response.ok || !isNaiveSearchResponse(body)) {
             setNaive({ status: 'error', message: "Couldn't load naive results." });

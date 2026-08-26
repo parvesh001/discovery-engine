@@ -92,6 +92,10 @@ CREATE TABLE search_logs (
 - Every search request logged with full reasoning trace (`search_logs`)
 - No stage failure should produce a blank/broken result for the user — degrade, don't crash
 
+## Documented Future Enhancements
+
+- **Voyage rate-limit queue is a shared, global capacity ceiling under concurrent load.** Load testing (Phase 9, `backend/LOAD_TEST_REPORT.md`) showed that under 50 simultaneous cache-miss requests, cold-pass P99 latency rises to ~5.1s — well above the ~2s single-request baseline. Root cause: the single global Voyage rate-limit queue (`backend/src/services/voyage/rateLimiter.ts`) serializes embedding and rerank calls across all concurrent users, so requests queue behind each other rather than running in parallel. This is not a bug — it's a genuine capacity ceiling surfaced by load testing. Production path: move to a higher Voyage pricing tier (raising `VOYAGE_MAX_REQUESTS_PER_MINUTE`), and/or split the rate-limit budget so embedding and rerank calls don't compete for the same queue. Not actionable without real concurrent production traffic to justify the cost.
+
 ## Phase Index
 
 | Phase | Spec File | Depends On |
