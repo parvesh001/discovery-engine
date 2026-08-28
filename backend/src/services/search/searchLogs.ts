@@ -10,6 +10,8 @@ export type ModelCallsLog = {
   embedding: { model: string; tokens: number | null } | null;
   rerank: { model: string; degraded: boolean; tokens: number | null } | null;
   failure?: { stage: 'retrieval'; error: true };
+  /** Spec 10, requirement 3: hit rate must be observable — queryable straight from search_logs. */
+  cache: { hit: boolean };
 };
 
 export type SearchLogEntry = {

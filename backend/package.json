@@ -17,21 +17,24 @@
     "migrate:create": "node-pg-migrate create -j sql --",
     "seed": "tsx src/scripts/seed.ts",
     "ingest": "tsx src/scripts/ingest.ts",
+    "ingest:worker": "tsx src/scripts/ingest-worker.ts",
     "test:query-understanding": "tsx src/scripts/testQueryUnderstanding.ts",
     "test:retrieval": "tsx src/scripts/testRetrieval.ts",
     "test:rerank": "tsx src/scripts/testRerank.ts",
     "eval": "tsx src/evals/runEvals.ts",
-    "cost-model": "tsx src/scripts/costModel.ts"
+    "cost-model": "tsx src/scripts/costModel.ts",
+    "loadtest": "tsx src/scripts/loadtest.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.4",
+    "bullmq": "^6.0.8",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
-    "express-rate-limit": "^8.6.0",
+    "ioredis": "^6.0.0",
     "langfuse": "^3.38.20",
-    "p-limit": "^7.3.1",
     "pg": "^8.13.1",
+    "rate-limiter-flexible": "^11.2.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -42,6 +45,7 @@
     "@types/supertest": "^6.0.2",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
+    "autocannon": "^8.0.0",
     "eslint-config-prettier": "^9.1.0",
     "node-pg-migrate": "^9.0.0",
     "supertest": "^7.0.0",

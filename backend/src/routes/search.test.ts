@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import type pg from 'pg';
 import type { SearchResponse } from '../services/search/orchestrateSearch.js';
 import type { SearchLogEntry } from '../services/search/searchLogs.js';
+import { getTestRedisUrl } from '../test/testRedis.js';
+import { createRedisClient } from '../services/redis/client.js';
 
 const runSearchMock = vi.fn();
 vi.mock('../services/search/orchestrateSearch.js', async (importOriginal) => {
@@ -27,6 +29,15 @@ import { SearchRetrievalError } from '../services/search/orchestrateSearch.js';
 import type { Listing } from '../services/search/retrieval.js';
 
 const pool = {} as pg.Pool;
+// Real test Redis (RateLimiterRedis needs genuine Redis quota/window semantics, not an
+// in-memory swap) — flushed before every test so leftover consumption from one test's
+// limiter never bleeds into the next (all limiter instances in this file share the same
+// keyPrefix + client-IP key regardless of which `createApp` call constructed them).
+const redis = createRedisClient(getTestRedisUrl());
+
+afterAll(() => {
+  redis.disconnect();
+});
 
 const sampleListing: Listing = {
   id: 'a',
@@ -76,17 +87,19 @@ const sampleLogEntry: SearchLogEntry = {
     },
     embedding: { model: 'voyage-4', tokens: 8 },
     rerank: { model: 'rerank-2.5', degraded: false, tokens: 150 },
+    cache: { hit: false },
   },
 };
 
-beforeEach(() => {
+beforeEach(async () => {
   runSearchMock.mockReset();
   logSearchMock.mockClear();
   naiveSearchListingsMock.mockReset();
+  await redis.flushdb();
 });
 
 describe('POST /api/search', () => {
-  const app = createApp(pool);
+  const app = createApp(pool, redis);
 
   it('returns 200 with the search response and fires an async search_logs write', async () => {
     runSearchMock.mockResolvedValue({ response: sampleResponse, logEntry: sampleLogEntry });
@@ -95,7 +108,7 @@ describe('POST /api/search', () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(sampleResponse);
-    expect(runSearchMock).toHaveBeenCalledWith(pool, 'cozy cabin');
+    expect(runSearchMock).toHaveBeenCalledWith(pool, 'cozy cabin', redis);
 
     await vi.waitFor(() => expect(logSearchMock).toHaveBeenCalledWith(pool, sampleLogEntry));
   });
@@ -146,7 +159,7 @@ describe('POST /api/search', () => {
 
 describe('POST /api/search — rate limiting', () => {
   it('rejects the request past the configured per-window limit with 429', async () => {
-    const app = createApp(pool, { searchRateLimit: { windowMs: 60_000, max: 3 } });
+    const app = createApp(pool, redis, { rateLimiterOverrides: { anonymousPoints: 3 } });
     runSearchMock.mockResolvedValue({ response: sampleResponse, logEntry: sampleLogEntry });
 
     for (let i = 0; i < 3; i += 1) {
@@ -156,11 +169,13 @@ describe('POST /api/search — rate limiting', () => {
 
     const limited = await request(app).post('/api/search').send({ query: 'cozy cabin' });
     expect(limited.status).toBe(429);
+    expect(limited.body).toEqual({ error: 'Too many requests. Please try again later.' });
+    expect(limited.headers['retry-after']).toBeDefined();
   });
 });
 
 describe('GET /api/search/naive', () => {
-  const app = createApp(pool);
+  const app = createApp(pool, redis);
 
   it('returns 200 with results for a valid query', async () => {
     naiveSearchListingsMock.mockResolvedValue([sampleListing]);
@@ -206,7 +221,7 @@ describe('GET /api/search/naive', () => {
   });
 
   it('shares the rate limiter with POST /api/search (confirmed shared-budget design)', async () => {
-    const sharedApp = createApp(pool, { searchRateLimit: { windowMs: 60_000, max: 3 } });
+    const sharedApp = createApp(pool, redis, { rateLimiterOverrides: { anonymousPoints: 3 } });
     runSearchMock.mockResolvedValue({ response: sampleResponse, logEntry: sampleLogEntry });
     naiveSearchListingsMock.mockResolvedValue([sampleListing]);
 

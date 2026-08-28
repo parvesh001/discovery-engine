@@ -11,6 +11,10 @@ const envSchema = z.object({
   VOYAGE_API_KEY: z
     .string({ required_error: 'VOYAGE_API_KEY is required' })
     .min(1, 'VOYAGE_API_KEY must not be empty'),
+  REDIS_URL: z
+    .string({ required_error: 'REDIS_URL is required' })
+    .min(1, 'REDIS_URL must not be empty')
+    .url('REDIS_URL must be a valid connection URL'),
   LANGFUSE_PUBLIC_KEY: z
     .string({ required_error: 'LANGFUSE_PUBLIC_KEY is required' })
     .min(1, 'LANGFUSE_PUBLIC_KEY must not be empty'),

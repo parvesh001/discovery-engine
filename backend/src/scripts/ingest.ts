@@ -1,7 +1,7 @@
 import { loadEnv, type Env } from '../env.js';
 import { createPool } from '../db.js';
-import { runIngestion } from '../services/ingestion/runIngestion.js';
-import { flushLangfuse } from '../services/observability/langfuse.js';
+import { createRedisClient } from '../services/redis/client.js';
+import { createIngestionQueue, enqueuePendingListings } from '../services/ingestion/queue.js';
 
 function loadEnvOrExit(): Env {
   try {
@@ -16,19 +16,24 @@ async function main(): Promise<void> {
   await import('dotenv/config');
   const env = loadEnvOrExit();
   const pool = createPool(env.DATABASE_URL);
+  // BullMQ requires maxRetriesPerRequest: null on its connection — a dedicated instance,
+  // never the general-purpose cache/rate-limiter one (see services/redis/client.ts).
+  const connection = createRedisClient(env.REDIS_URL, { maxRetriesPerRequest: null });
+  const queue = createIngestionQueue(connection);
 
   try {
-    const summary = await runIngestion(pool);
-    console.log(`Ingestion complete: ${summary.processed} processed, ${summary.failed} failed.`);
-    if (summary.failedIds.length > 0) {
-      console.log(`Failed listing IDs: ${summary.failedIds.join(', ')}`);
-    }
+    const { enqueued } = await enqueuePendingListings(pool, queue);
+    console.log(`Enqueued ${enqueued} listing(s) for ingestion. Run "pnpm run ingest:worker" to process them.`);
   } catch (error) {
-    console.error('Ingestion run crashed:', error instanceof Error ? error.message : error);
+    console.error('Enqueueing ingestion jobs crashed:', error instanceof Error ? error.message : error);
     process.exitCode = 1;
   } finally {
     await pool.end();
-    await flushLangfuse();
+    // queue.close() alone doesn't disconnect a connection BullMQ doesn't own — this script
+    // created `connection` itself, so it must also disconnect it, or the process (a
+    // one-shot CLI trigger, not a long-running worker) hangs forever on the open socket.
+    await queue.close();
+    connection.disconnect();
   }
 }
 

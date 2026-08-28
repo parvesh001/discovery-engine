@@ -9,8 +9,8 @@ function isSparse(rawDescription: string): boolean {
 }
 
 describe('seedListings', () => {
-  it('contains exactly 35 listings', () => {
-    expect(seedListings).toHaveLength(35);
+  it('contains exactly 36 listings', () => {
+    expect(seedListings).toHaveLength(36);
   });
 
   it('has price_per_night within the ₹800-₹18,000 range for every listing', () => {

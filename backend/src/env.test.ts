@@ -5,6 +5,7 @@ const validEnv = {
   DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/discovery_engine',
   ANTHROPIC_API_KEY: 'sk-ant-test-key',
   VOYAGE_API_KEY: 'pa-test-key',
+  REDIS_URL: 'redis://localhost:6379',
   LANGFUSE_PUBLIC_KEY: 'pk-lf-test-key',
   LANGFUSE_SECRET_KEY: 'sk-lf-test-key',
   PORT: '4000',
@@ -17,6 +18,7 @@ describe('loadEnv', () => {
       DATABASE_URL: validEnv.DATABASE_URL,
       ANTHROPIC_API_KEY: validEnv.ANTHROPIC_API_KEY,
       VOYAGE_API_KEY: validEnv.VOYAGE_API_KEY,
+      REDIS_URL: validEnv.REDIS_URL,
       LANGFUSE_PUBLIC_KEY: validEnv.LANGFUSE_PUBLIC_KEY,
       LANGFUSE_SECRET_KEY: validEnv.LANGFUSE_SECRET_KEY,
       PORT: 4000,
@@ -26,6 +28,15 @@ describe('loadEnv', () => {
   it('throws naming DATABASE_URL when it is missing', () => {
     const { DATABASE_URL: _DATABASE_URL, ...rest } = validEnv;
     expect(() => loadEnv(rest)).toThrow(/DATABASE_URL/);
+  });
+
+  it('throws naming REDIS_URL when it is missing', () => {
+    const { REDIS_URL: _REDIS_URL, ...rest } = validEnv;
+    expect(() => loadEnv(rest)).toThrow(/REDIS_URL/);
+  });
+
+  it('throws when REDIS_URL is not a valid URL', () => {
+    expect(() => loadEnv({ ...validEnv, REDIS_URL: 'not-a-url' })).toThrow(/REDIS_URL/);
   });
 
   it('throws naming ANTHROPIC_API_KEY when it is missing', () => {
