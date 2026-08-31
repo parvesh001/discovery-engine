@@ -54,11 +54,18 @@ function keysFor(service: RenderService): Set<string> {
 }
 
 const requiredEnvKeys = Object.keys(envSchema.shape);
+const maybeService = (name: string): RenderService | undefined =>
+  blueprint.services?.find((s) => s.name === name);
 const service = (name: string): RenderService => {
-  const found = blueprint.services?.find((s) => s.name === name);
+  const found = maybeService(name);
   if (!found) throw new Error(`render.yaml has no service named ${name}`);
   return found;
 };
+
+// The ingestion worker is commented out for the free-tier demo (Render workers need a
+// paid plan — see render.yaml / DEPLOYMENT.md). These worker assertions still run if it
+// is re-enabled, so the drift guard keeps working either way.
+const worker = maybeService('discovery-engine-ingest-worker');
 
 describe('render.yaml blueprint', () => {
   it('references an env var group that actually exists for every fromGroup', () => {
@@ -69,17 +76,16 @@ describe('render.yaml blueprint', () => {
     }
   });
 
-  it.each(['discovery-engine-backend', 'discovery-engine-ingest-worker'])(
-    '%s is given every env key env.ts requires at boot',
-    (name) => {
-      const provided = keysFor(service(name));
-      const missing = requiredEnvKeys.filter((k) => !provided.has(k));
-      expect(missing).toEqual([]);
-    },
-  );
+  const bootServices = ['discovery-engine-backend', ...(worker ? ['discovery-engine-ingest-worker'] : [])];
+
+  it.each(bootServices)('%s is given every env key env.ts requires at boot', (name) => {
+    const provided = keysFor(service(name));
+    const missing = requiredEnvKeys.filter((k) => !provided.has(k));
+    expect(missing).toEqual([]);
+  });
 
   it('keeps DATABASE_URL and REDIS_URL as managed-resource refs, not literal values', () => {
-    for (const name of ['discovery-engine-backend', 'discovery-engine-ingest-worker']) {
+    for (const name of bootServices) {
       const entries = service(name).envVars ?? [];
       const db = entries.find((e) => 'key' in e && e.key === 'DATABASE_URL');
       const redis = entries.find((e) => 'key' in e && e.key === 'REDIS_URL');
@@ -109,12 +115,11 @@ describe('render.yaml blueprint', () => {
     expect(web.branch).toBe('main');
   });
 
-  it('runs the worker with the ingestion-worker entrypoint and auto-deploy on main', () => {
-    const worker = service('discovery-engine-ingest-worker');
-    expect(worker.type).toBe('worker');
-    expect(worker.dockerCommand).toBe('node dist/scripts/ingest-worker.js');
-    expect(worker.autoDeploy).toBe(true);
-    expect(worker.branch).toBe('main');
+  it.skipIf(!worker)('runs the worker with the ingestion-worker entrypoint and auto-deploy on main', () => {
+    expect(worker?.type).toBe('worker');
+    expect(worker?.dockerCommand).toBe('node dist/scripts/ingest-worker.js');
+    expect(worker?.autoDeploy).toBe(true);
+    expect(worker?.branch).toBe('main');
   });
 
   it('provisions Postgres 16 for pgvector', () => {
