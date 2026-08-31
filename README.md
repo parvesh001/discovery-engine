@@ -109,6 +109,17 @@ pnpm --filter backend run ingest:worker
 
 Before considering any backend change complete, run all three: `pnpm lint`, `pnpm --filter backend test`, `pnpm --filter backend run build`.
 
+## Deployment
+
+The backend (Express + Postgres + Key Value + ingestion worker) deploys to **Render** from
+[`render.yaml`](render.yaml) and [`backend/Dockerfile`](backend/Dockerfile); the frontend
+deploys to **Vercel**. A merge to `main` auto-deploys both. GitHub Actions
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs lint + tests + build on
+every push/PR as the gate before those deploys.
+
+Full step-by-step setup, the environment variables each platform needs, and the
+post-deploy smoke-test checklist are in [`DEPLOYMENT.md`](DEPLOYMENT.md).
+
 ## Repo Structure
 
 ```
