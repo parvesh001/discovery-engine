@@ -1,0 +1,131 @@
+# Render Blueprint — infra-as-code for the backend half of discovery-engine.
+# (Frontend is deployed separately on Vercel.) Spec: specs/11-deployment.md.
+#
+# Apply from the Render dashboard: New > Blueprint > connect this repo. Render reads this
+# file, creates the four resources below, and prompts for the `sync: false` secrets.
+# See DEPLOYMENT.md for the full walkthrough and the free-tier caveats.
+#
+# Topology:
+#   discovery-engine-db             Postgres 16 (pgvector)         — managed database
+#   discovery-engine-kv             Redis-compatible Key Value      — cache + BullMQ queue
+#   discovery-engine-backend        Express API (Docker)           — web service
+#   discovery-engine-ingest-worker  BullMQ ingestion worker (Docker) — background worker
+
+databases:
+  - name: discovery-engine-db
+    plan: free # DEMO ONLY: free Postgres expires 30 days after creation. See DEPLOYMENT.md.
+    postgresMajorVersion: "16"
+    # pgvector is available on Render Postgres; migration 1784285145000 runs
+    # `CREATE EXTENSION IF NOT EXISTS vector`, so no separate enablement step.
+    # No ipAllowList => reachable only from Render services in the same account/region.
+
+services:
+  # ---------------------------------------------------------------------------
+  # Redis-compatible Key Value store — backs the search cache, the tiered rate
+  # limiter, and the BullMQ ingestion queue (all from Phase 9).
+  # ---------------------------------------------------------------------------
+  - type: keyvalue
+    name: discovery-engine-kv
+    plan: free # DEMO ONLY: free Key Value is in-memory; queued BullMQ jobs are lost on
+    # any restart. Cache misses are harmless. Must go to a paid (disk-persisted)
+    # instance type before real traffic. See DEPLOYMENT.md.
+    region: oregon
+    ipAllowList: [] # no public access — Render private network only
+    maxmemoryPolicy: noeviction # BullMQ requires no eviction; the cache tolerates OOM-on-write
+
+  # ---------------------------------------------------------------------------
+  # Express backend API.
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: discovery-engine-backend
+    runtime: docker
+    region: oregon
+    plan: free # DEMO ONLY: free web services cold-start after inactivity.
+    branch: main # auto-deploy trigger — merges to main redeploy this service
+    autoDeploy: true
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: . # repo root — the Dockerfile is a pnpm-workspace build
+    healthCheckPath: /health
+    # Runs in a one-off instance of the freshly built image before traffic shifts.
+    # NOTE: Render only runs preDeployCommand on paid instance types. On the free plan
+    # it is skipped — run migrations manually after the first deploy (DEPLOYMENT.md).
+    preDeployCommand: "node_modules/.bin/node-pg-migrate up"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: discovery-engine-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: discovery-engine-kv
+          property: connectionString
+      - key: PORT
+        value: "4000" # matches EXPOSE in backend/Dockerfile; env.ts reads it
+      - fromGroup: discovery-engine-secrets
+
+  # ---------------------------------------------------------------------------
+  # BullMQ ingestion worker — DISABLED for the free-tier demo.
+  #
+  # Render background workers require a paid plan, so this service is commented out to
+  # keep the demo entirely free. While it is disabled, run ingestion manually from a
+  # dev machine against the production DATABASE_URL / REDIS_URL whenever the demo
+  # catalogue needs updating:
+  #
+  #     pnpm --filter backend run ingest         # enqueue pending listings
+  #     pnpm --filter backend run ingest:worker  # drain the queue, then Ctrl+C
+  #
+  # See DEPLOYMENT.md §4. To re-enable an always-on worker, uncomment this block (it is
+  # a valid `starter`-plan service) and remove it from the "disabled" note there.
+  #
+  # - type: worker
+  #   name: discovery-engine-ingest-worker
+  #   runtime: docker
+  #   region: oregon
+  #   plan: starter
+  #   branch: main
+  #   autoDeploy: true
+  #   dockerfilePath: ./backend/Dockerfile
+  #   dockerContext: .
+  #   dockerCommand: node dist/scripts/ingest-worker.js
+  #   envVars:
+  #     - key: DATABASE_URL
+  #       fromDatabase:
+  #         name: discovery-engine-db
+  #         property: connectionString
+  #     - key: REDIS_URL
+  #       fromService:
+  #         type: keyvalue
+  #         name: discovery-engine-kv
+  #         property: connectionString
+  #     # The worker shares env.ts's loadEnv(), which requires PORT even though the
+  #     # worker never binds a socket. Any valid value works.
+  #     - key: PORT
+  #       value: "4000"
+  #     - fromGroup: discovery-engine-secrets
+  # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Secrets consumed by the web service (and the worker, when it is enabled). Values are
+# NOT in the repo: `sync: false` makes Render prompt for them on blueprint apply and
+# never syncs them back to this file. Keep this list in step with the schema in
+# backend/src/env.ts (enforced by backend/src/render.test.ts).
+# ---------------------------------------------------------------------------
+envVarGroups:
+  - name: discovery-engine-secrets
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: VOYAGE_API_KEY
+        sync: false
+      # Optional (env.ts): set to the Voyage account's real RPM ceiling once a payment
+      # method is on file — otherwise embedding/rerank calls throttle hard.
+      - key: VOYAGE_MAX_REQUESTS_PER_MINUTE
+        sync: false
+      - key: LANGFUSE_PUBLIC_KEY
+        sync: false
+      - key: LANGFUSE_SECRET_KEY
+        sync: false
+      # Optional (env.ts): only needed for Langfuse EU region or a self-hosted instance.
+      - key: LANGFUSE_BASEURL
+        sync: false

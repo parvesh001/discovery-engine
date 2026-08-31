@@ -5,6 +5,9 @@ export default defineConfig({
     environment: 'node',
     globals: false,
     globalSetup: './src/test/globalSetup.ts',
+    // Blocks unmocked `fetch` so a test that forgets to stub a real outbound call fails
+    // loudly instead of hitting a live API (or spending API budget). See the file header.
+    setupFiles: ['./src/test/noNetwork.ts'],
     // Integration tests share one test database and isolate via TRUNCATE in
     // beforeEach, which only works if test files run one at a time.
     fileParallelism: false,

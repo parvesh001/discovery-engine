@@ -1,0 +1,87 @@
+name: CI
+
+# Runs on every push and PR. Make "CI / verify" (and optionally "CI / docker") a
+# required status check on `main` in branch protection so a broken build can't merge —
+# and can't reach the Render/Vercel auto-deploy that fires on merge. See DEPLOYMENT.md.
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: discovery_engine
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Dev/prod-shaped vars. The suite talks only to the TEST_* targets; DATABASE_URL /
+      # REDIS_URL exist so getTestDatabaseUrl()/getTestRedisUrl() can assert they differ.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/discovery_engine
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/discovery_engine_test
+      REDIS_URL: redis://localhost:6379/0
+      TEST_REDIS_URL: redis://localhost:6379/15
+      # The Anthropic SDK is vi.mock-ed and fetch is stubbed (src/test/noNetwork.ts), so
+      # no real key is ever used — these just satisfy any process.env reads.
+      ANTHROPIC_API_KEY: ci-anthropic-sdk-is-mocked
+      VOYAGE_API_KEY: ci-voyage-fetch-is-mocked
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6 # version comes from package.json "packageManager"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The Postgres service creates `discovery_engine`; the test DB is created here.
+      # globalSetup.ts then runs node-pg-migrate against TEST_DATABASE_URL.
+      - name: Create test database
+        run: psql "$DATABASE_URL" -c 'CREATE DATABASE discovery_engine_test;'
+
+      - run: pnpm lint
+
+      - run: pnpm --filter backend test
+
+      - run: pnpm --filter backend run build
+
+      - run: pnpm --filter frontend run build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Build the production image the way Render does (Dockerfile, repo-root context).
+      # Catches Dockerfile / build-context regressions before they reach Render.
+      - name: Build backend image
+        run: docker build -f backend/Dockerfile -t discovery-backend:ci .
