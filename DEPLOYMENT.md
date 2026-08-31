@@ -67,7 +67,7 @@ services together by hand.
    |---|---|
    | `ANTHROPIC_API_KEY` | your Anthropic key |
    | `VOYAGE_API_KEY` | your Voyage key |
-   | `VOYAGE_MAX_REQUESTS_PER_MINUTE` | your Voyage tier's real RPM (e.g. `2000`); omit to accept the conservative default |
+   | `VOYAGE_MAX_REQUESTS_PER_MINUTE` | your Voyage tier's real RPM (e.g. `2000`). **Do not omit** — see §9: leaving it unset does not fail startup, it silently throttles reranking to ~3 RPM (~20s first call). |
    | `LANGFUSE_PUBLIC_KEY` | Langfuse project public key |
    | `LANGFUSE_SECRET_KEY` | Langfuse project secret key |
    | `LANGFUSE_BASEURL` | only for the Langfuse EU region / self-hosted; otherwise omit |
@@ -205,6 +205,10 @@ Run after **every** deploy (takes ~2 minutes). All against the live URLs.
 - [ ] Frontend root loads; the health indicator shows connected.
 - [ ] `/search`: run a real query (e.g. *"pet friendly cabin with a mountain view"*) →
       results render, each with title, price, location.
+- [ ] The `RERANK …ms` figure in the pipeline trace under the search box is under ~1s on
+      that first real search, not ~20s. A ~20s rerank means `VOYAGE_MAX_REQUESTS_PER_MINUTE`
+      is unset in the Render environment — set it (§9) and re-test. Returning results is
+      *not* enough on its own.
 - [ ] The same query a second time returns noticeably faster (cache hit) and still
       returns results (Key Value reachable).
 - [ ] Naive vs. AI search toggle both return results.
@@ -246,7 +250,7 @@ ever uncommented.
 | `PORT` | blueprint literal (`4000`) | matches `EXPOSE` in the Dockerfile |
 | `ANTHROPIC_API_KEY` | secret (`sync: false`) | required |
 | `VOYAGE_API_KEY` | secret | required |
-| `VOYAGE_MAX_REQUESTS_PER_MINUTE` | secret | optional; set to the real Voyage tier |
+| `VOYAGE_MAX_REQUESTS_PER_MINUTE` | secret | **Required in practice.** Optional in `env.ts`, so omitting it does *not* fail startup — instead the Voyage rate limiter silently falls back to the free-tier assumption (~3 RPM) and the first live rerank call takes ~20s instead of ~300ms. Set it to the account's real RPM (e.g. `2000`). |
 | `LANGFUSE_PUBLIC_KEY` | secret | required (server won't boot without it) |
 | `LANGFUSE_SECRET_KEY` | secret | required |
 | `LANGFUSE_BASEURL` | secret | optional; EU region / self-hosted only |
