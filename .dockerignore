@@ -1,0 +1,29 @@
+# Build context for backend/Dockerfile (context is the repo root).
+# Keep the context small and cache-stable; never ship local env or build output.
+
+# Dependencies and build output — reinstalled / recompiled inside the image
+**/node_modules
+**/dist
+**/.next
+**/coverage
+**/.turbo
+
+# VCS / CI / editor cruft
+.git
+.github
+.vscode
+**/.DS_Store
+*.log
+
+# Local env files — must never be baked into an image. Keep .env.example.
+**/.env
+**/.env.*
+!**/.env.example
+
+# Docs, specs, phase reports — not used at build or runtime
+**/*.md
+
+# Frontend is deployed separately (Vercel). Only its package.json is needed, and only
+# so the workspace lockfile validates during `pnpm install`.
+frontend/**
+!frontend/package.json
