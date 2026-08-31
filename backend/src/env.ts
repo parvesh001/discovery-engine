@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
-const envSchema = z.object({
+// Exported so backend/src/render.test.ts can assert render.yaml wires every key the
+// backend requires at boot. Keep it the single source of truth for required env.
+export const envSchema = z.object({
   DATABASE_URL: z
     .string({ required_error: 'DATABASE_URL is required' })
     .min(1, 'DATABASE_URL must not be empty')
