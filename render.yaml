@@ -46,10 +46,12 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: . # repo root — the Dockerfile is a pnpm-workspace build
     healthCheckPath: /health
-    # Runs in a one-off instance of the freshly built image before traffic shifts.
-    # NOTE: Render only runs preDeployCommand on paid instance types. On the free plan
-    # it is skipped — run migrations manually after the first deploy (DEPLOYMENT.md).
-    preDeployCommand: "node_modules/.bin/node-pg-migrate up"
+    # NO preDeployCommand: Render rejects the whole blueprint with "pre-deploy command is
+    # not supported for free tier services" (confirmed on a live apply — it blocks the
+    # deploy, it is not silently skipped). Migrations are therefore run BY HAND after the
+    # first deploy and after any later deploy that changes backend/migrations/ — open the
+    # web service Shell (cwd /app) and run:  node_modules/.bin/node-pg-migrate up
+    # See DEPLOYMENT.md §3.4 / §10. Restore this key only alongside a paid instance type.
     envVars:
       - key: DATABASE_URL
         fromDatabase:

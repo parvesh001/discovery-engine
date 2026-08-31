@@ -80,11 +80,12 @@ services together by hand.
 
    > ### ⚠️ Migrations are MANUAL on the free web service tier
    >
-   > `render.yaml` sets `preDeployCommand: node_modules/.bin/node-pg-migrate up`, but
-   > **Render only runs `preDeployCommand` on paid instance types.** On the free plan it
-   > is silently skipped. You must run migrations by hand **after the first deploy and
-   > after every later deploy whose commit adds or changes a file in
-   > `backend/migrations/`** — otherwise the new code runs against the old schema.
+   > `render.yaml` has **no `preDeployCommand`**: on a free-tier service Render rejects
+   > the entire blueprint with *"pre-deploy command is not supported for free tier
+   > services"* (confirmed on a live apply — it blocks the deploy, it is not skipped).
+   > So you must run migrations by hand **after the first deploy and after every later
+   > deploy whose commit adds or changes a file in `backend/migrations/`** — otherwise the
+   > new code runs against the old schema.
    >
    > Open the Render web service → **Shell**, and run (cwd is already `/app`):
    >
@@ -197,9 +198,9 @@ completed jobs, then stop it with Ctrl+C (it shuts down cleanly on SIGINT/SIGTER
 Run after **every** deploy (takes ~2 minutes). All against the live URLs.
 
 - [ ] **If this deploy's commits touched `backend/migrations/`:** migrations were applied
-      manually — `preDeployCommand` does **not** run on the free web tier. Open the Render
-      web service → Shell → `node_modules/.bin/node-pg-migrate up` (§3.4), and confirm it
-      prints `No migrations to run!` on a second run.
+      manually — the free web tier has no `preDeployCommand`. Open the Render web service →
+      Shell → `node_modules/.bin/node-pg-migrate up` (§3.4), and confirm it prints
+      `No migrations to run!` on a second run.
 - [ ] `curl -i https://<render-backend>/health` → `200`, body `{"status":"ok","db":"connected"}`.
 - [ ] Frontend root loads; the health indicator shows connected.
 - [ ] `/search`: run a real query (e.g. *"pet friendly cabin with a mountain view"*) →
@@ -263,16 +264,18 @@ ever uncommented.
 This reference build runs entirely on Render's free tier. That is fine for a demo and
 **not** production-ready:
 
-- **`preDeployCommand` (automatic migrations on deploy) does NOT run on the free web
-  service tier.** `render.yaml` sets it, but Render only honours it on paid instance
-  types — on free tier it is silently skipped. So **after any deploy whose commit adds or
-  changes a file in `backend/migrations/`, migrations must be applied by hand** or the
-  new code runs against the old schema. Render web service → **Shell** (cwd is `/app`):
+- **No `preDeployCommand` — free-tier services can't have one.** Adding it makes Render
+  reject the whole blueprint (*"pre-deploy command is not supported for free tier
+  services"*), so automatic migrations on deploy are not an option here. **After any
+  deploy whose commit adds or changes a file in `backend/migrations/`, migrations must be
+  applied by hand** or the new code runs against the old schema. Render web service →
+  **Shell** (cwd is `/app`):
   ```
   node_modules/.bin/node-pg-migrate up
   ```
   Idempotent — prints `No migrations to run!` when nothing is pending. Covered in §3.4
-  and the §7 smoke test. Moving the web service to a paid plan makes this automatic.
+  and the §7 smoke test. On a paid instance type, restore the `preDeployCommand` key in
+  `render.yaml` to make this automatic.
 - **Render background workers require a paid plan**, so `discovery-engine-ingest-worker`
   is **commented out** in `render.yaml`. Ingestion is instead run manually from a dev
   machine against the prod `DATABASE_URL` / `REDIS_URL` whenever the catalogue changes
