@@ -214,8 +214,18 @@ Run after **every** deploy (takes ~2 minutes). All against the live URLs.
       `No migrations to run!` on a second run.
 - [ ] `curl -i https://<render-backend>/health` → `200`, body `{"status":"ok","db":"connected"}`.
 - [ ] Frontend root loads; the health indicator shows connected.
-- [ ] `/search`: run a real query (e.g. *"pet friendly cabin with a mountain view"*) →
-      results render, each with title, price, location.
+- [ ] **Browse (spec 12):** `curl "https://<render-backend>/api/listings?destination=manali"`
+      and `?destination=goa` each return a non-empty `results` array of that destination's
+      listings; `?destination=xyz` and the param omitted both return `400`.
+- [ ] **Browse UI:** open `/search`, pick **Manali** → a price-ascending list of Manali
+      stays loads and the URL becomes `…/search?destination=manali`; reloading that URL
+      lands straight on the Manali list. Switch to **Goa** → the list swaps.
+- [ ] `/search`: with a destination selected, run a real query (e.g. *"pet friendly cabin
+      with a mountain view"*) → the naive-vs-AI compare view renders, each card with title,
+      price, location.
+- [ ] **Scoped search (spec 12):** run a query with strong cross-destination pull
+      (e.g. *"beachfront villa with a pool"* while **Manali** is selected) → **zero** Goa
+      listings appear in either column. Clearing the query returns to the browse list.
 - [ ] The `RERANK …ms` figure in the pipeline trace under the search box is under ~1s on
       that first real search, not ~20s. A ~20s rerank means `VOYAGE_MAX_REQUESTS_PER_MINUTE`
       is unset in the Render environment — set it (§9) and re-test. Returning results is
