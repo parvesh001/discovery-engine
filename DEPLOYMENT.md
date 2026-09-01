@@ -121,15 +121,23 @@ services together by hand.
 The ingestion worker is **not deployed** (free tier — Render workers need a paid plan),
 so ingestion is run **manually from a dev machine against the production connection
 strings** — both for the initial seed and every later time the demo catalogue needs
-updating (new/edited listings in `backend/src/scripts/seed-data.ts`, or a re-embed after
-an embedding-model change).
+updating (new/edited listings in `backend/src/scripts/seed-demo-data.ts`, or a re-embed
+after an embedding-model change).
 
-> ### ⚠️ `pnpm run seed` DELETES DATA
+> ### ⚠️ `pnpm run seed:demo` DELETES DATA — and this is the command you run against production
 >
-> `seed` runs `TRUNCATE listings CASCADE` and reloads the dummy dataset. It is safe here
-> because the deployed database is demo-only. **Never run it against a database that holds
-> real client listings** — there is no undo. (A `--force` / row-count guard is a tracked
-> future enhancement; see `specs/00-architecture.md`.)
+> `seed:demo` (and the local-only `seed`) both run `TRUNCATE listings CASCADE` before
+> reloading: every row in `listings`, plus anything referencing it by foreign key, is
+> gone, with no undo. `seed:demo` is the one that runs **here, against the deployed
+> database**, so treat it with the same care as any destructive production command.
+>
+> - It is safe **only** because this database is demo-only. **Never run `seed` or
+>   `seed:demo` against a database that holds real client listings.**
+> - There is no `--force` flag and no row-count guard — nothing stops it running against
+>   a populated database. That interlock is a tracked future enhancement
+>   (see `specs/00-architecture.md`).
+> - Confirm `DATABASE_URL` points at the intended demo database *before* running it.
+>   Re-exporting the wrong connection string is the realistic way this goes wrong.
 
 Copy the connection strings from the Render dashboard — the database page for
 `DATABASE_URL`, the Key Value page for `REDIS_URL` — then, from the repo root:
@@ -141,19 +149,22 @@ export ANTHROPIC_API_KEY='...'
 export VOYAGE_API_KEY='...'
 export LANGFUSE_PUBLIC_KEY='...' LANGFUSE_SECRET_KEY='...' PORT=4000
 
-pnpm --filter backend run seed           # reload dummy listings (destructive — see warning)
+pnpm --filter backend run seed:demo      # reload the 72-listing demo catalogue (destructive — see warning)
 pnpm --filter backend run ingest         # enqueue all pending listings onto the BullMQ queue
 pnpm --filter backend run ingest:worker  # drain the queue (extraction + embeddings); Ctrl+C when it idles
 ```
 
+(`pnpm --filter backend run seed` — no `:demo` — loads the smaller 36-listing eval
+dataset and is for local / CI use only; `seed:demo` is the deployed demo catalogue.)
+
 `ingest` only enqueues — it selects `listings` rows with `ingestion_status = 'pending'`
-(the column default, which `seed` resets on every reload) and adds them to the queue.
+(the column default, which `seed:demo` resets on every reload) and adds them to the queue.
 Nothing is processed until `ingest:worker` runs; leave it running until it stops logging
 completed jobs, then stop it with Ctrl+C (it shuts down cleanly on SIGINT/SIGTERM).
 
 > If the worker service is later re-enabled on a paid plan (uncomment its block in
-> `render.yaml`), it drains the queue automatically and you only need `seed` + `ingest`
-> here — drop the local `ingest:worker` step.
+> `render.yaml`), it drains the queue automatically and you only need `seed:demo` +
+> `ingest` here — drop the local `ingest:worker` step.
 
 ---
 
@@ -217,7 +228,7 @@ Run after **every** deploy (takes ~2 minutes). All against the live URLs.
 - [ ] Render web service logs for the last few minutes: no unhandled exceptions, no
       `env` validation errors, no repeated Postgres/Redis connection failures.
 - [ ] A Langfuse trace appears for the test searches (if Langfuse is configured).
-- [ ] If the demo catalogue was changed this deploy: ran `seed` / `ingest` /
+- [ ] If the demo catalogue was changed this deploy: ran `seed:demo` / `ingest` /
       `ingest:worker` locally against the prod connection strings (§4), and search now
       returns the updated listings.
 
@@ -306,7 +317,7 @@ system. If a step here is missing or wrong, fix *this document*.
 3. [ ] Render: Postgres + Key Value provisioned; web service deployed (no worker — §4).
 4. [ ] Migrations applied **manually** via the web service Shell: `node_modules/.bin/node-pg-migrate up` (§3.4); `\dx vector` present.
 5. [ ] `GET /health` on the Render URL → `200`.
-6. [ ] Catalogue loaded: `seed` → `ingest` → `ingest:worker` run locally against the prod connection strings (§4), left running until the queue idles.
+6. [ ] Catalogue loaded: `seed:demo` → `ingest` → `ingest:worker` run locally against the prod connection strings (§4), left running until the queue idles.
 7. [ ] Vercel: Add Project → root dir `frontend` → set `NEXT_PUBLIC_BACKEND_URL` → Deploy.
 8. [ ] Frontend loads and runs a real search end-to-end against the Render backend.
 9. [ ] GitHub: branch ruleset on `main` requires `CI / verify`.
