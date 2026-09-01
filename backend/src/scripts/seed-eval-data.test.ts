@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { seedListings } from './seed-data.js';
+import { evalSeedListings } from './seed-eval-data.js';
 
 const LONG_TAIL_TITLE_PATTERN = /yurt|treehouse|houseboat|floating home|silo|airstream|fire lookout|studio|garden-level/i;
 
@@ -8,20 +8,20 @@ function isSparse(rawDescription: string): boolean {
   return sentenceCount <= 2;
 }
 
-describe('seedListings', () => {
+describe('evalSeedListings', () => {
   it('contains exactly 36 listings', () => {
-    expect(seedListings).toHaveLength(36);
+    expect(evalSeedListings).toHaveLength(36);
   });
 
   it('has price_per_night within the ₹800-₹18,000 range for every listing', () => {
-    for (const listing of seedListings) {
+    for (const listing of evalSeedListings) {
       expect(listing.pricePerNight).toBeGreaterThanOrEqual(800);
       expect(listing.pricePerNight).toBeLessThanOrEqual(18000);
     }
   });
 
   it('has bedrooms spanning studio (0) through 6, within range for every listing', () => {
-    const bedroomCounts = seedListings.map((l) => l.bedrooms);
+    const bedroomCounts = evalSeedListings.map((l) => l.bedrooms);
     for (const count of bedroomCounts) {
       expect(count).toBeGreaterThanOrEqual(0);
       expect(count).toBeLessThanOrEqual(6);
@@ -31,17 +31,17 @@ describe('seedListings', () => {
   });
 
   it('has at least 5 long-tail listings (unusual property type and/or sparse description)', () => {
-    const longTail = seedListings.filter(
+    const longTail = evalSeedListings.filter(
       (l) => LONG_TAIL_TITLE_PATTERN.test(l.title) || isSparse(l.rawDescription),
     );
     expect(longTail.length).toBeGreaterThanOrEqual(5);
   });
 
   it('expresses pet policy in more than one distinct way across listings', () => {
-    const explicitFriendly = seedListings.filter((l) => /pet-friendly|pets? (are|is) (more than )?welcome|welcomes dogs/i.test(l.rawDescription));
-    const explicitNo = seedListings.filter((l) => /cannot accommodate pets|no pets|not permitted|prohibits pets|unable to host pets/i.test(l.rawDescription));
-    const mentionsDogGear = seedListings.filter((l) => /dog bed|dog bowl|fenced (run|yard|acre|side yard)|paw-wash|dog run|crate available/i.test(l.rawDescription));
-    const noPetMention = seedListings.filter(
+    const explicitFriendly = evalSeedListings.filter((l) => /pet-friendly|pets? (are|is) (more than )?welcome|welcomes dogs/i.test(l.rawDescription));
+    const explicitNo = evalSeedListings.filter((l) => /cannot accommodate pets|no pets|not permitted|prohibits pets|unable to host pets/i.test(l.rawDescription));
+    const mentionsDogGear = evalSeedListings.filter((l) => /dog bed|dog bowl|fenced (run|yard|acre|side yard)|paw-wash|dog run|crate available/i.test(l.rawDescription));
+    const noPetMention = evalSeedListings.filter(
       (l) => !explicitFriendly.includes(l) && !explicitNo.includes(l) && !mentionsDogGear.includes(l),
     );
 
@@ -52,20 +52,20 @@ describe('seedListings', () => {
   });
 
   it('expresses view type in more than one distinct way across listings', () => {
-    const explicitView = seedListings.filter((l) => /\bview[s]?\b/i.test(l.rawDescription));
-    const noViewKeyword = seedListings.filter((l) => !/\bview[s]?\b/i.test(l.rawDescription));
+    const explicitView = evalSeedListings.filter((l) => /\bview[s]?\b/i.test(l.rawDescription));
+    const noViewKeyword = evalSeedListings.filter((l) => !/\bview[s]?\b/i.test(l.rawDescription));
 
     expect(explicitView.length).toBeGreaterThan(0);
     expect(noViewKeyword.length).toBeGreaterThan(0);
   });
 
   it('does not repeat the exact same description text across listings', () => {
-    const descriptions = seedListings.map((l) => l.rawDescription);
+    const descriptions = evalSeedListings.map((l) => l.rawDescription);
     expect(new Set(descriptions).size).toBe(descriptions.length);
   });
 
   it('covers a mix of mountain, coastal, and city locations', () => {
-    const locations = seedListings.map((l) => l.location);
+    const locations = evalSeedListings.map((l) => l.location);
     expect(new Set(locations).size).toBeGreaterThan(20);
   });
 });

@@ -300,7 +300,7 @@ describe('rerank', () => {
     reserveSlotSpy.mockRestore();
   });
 
-  // Spec 10, requirement 1: a re-seeded listing (seed-data.ts's "Riverside Studio,
+  // Spec 10, requirement 1: a re-seeded listing (seed-eval-data.ts's "Riverside Studio,
   // Rishikesh") carries an embedded prompt-injection attempt in its description, trying to
   // make a re-ranker always rank it #1 regardless of query relevance. This suite confirms
   // the pipeline treats that text as inert data — the code does pure index-based score

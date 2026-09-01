@@ -11,7 +11,7 @@ import { TEST_QUERIES } from './testQueryUnderstanding.js';
 // to eyeball relevance against the seeded dataset (e.g. does "a place with a great view"
 // surface listings whose text describes a view in different words, per acceptance criterion
 // 3; and does the location-only query at index 16 correctly report filtersRelaxed: true,
-// since seed-data.ts tags only one listing "Manali, Himachal Pradesh" — spec 05's amendment
+// since seed-eval-data.ts tags only one listing "Manali, Himachal Pradesh" — spec 05's amendment
 // acceptance criterion for location-narrow relaxation).
 const SAMPLE_QUERY_INDICES = [0, 5, 8, 12, 15, 16];
 

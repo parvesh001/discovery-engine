@@ -7,8 +7,9 @@ export type EvalCase = {
 /**
  * At least 20 cases (spec 09), spanning explicit-filter, synonym/paraphrase,
  * subjective/subtle-intent, and >=3 long-tail-listing cases. `mustInclude`/`mustExclude`
- * reference real titles from backend/src/scripts/seed-data.ts — keep these two files in
- * sync if the seed data ever changes.
+ * reference real titles from backend/src/scripts/seed-eval-data.ts — keep these two files
+ * in sync if the seed data ever changes. (The demo dataset in seed-demo-data.ts is never
+ * exercised by the eval suite — see specs/12-location-scoped-search.md.)
  */
 export const testCases: EvalCase[] = [
   // --- Explicit filter queries ---

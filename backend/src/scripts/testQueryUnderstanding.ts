@@ -30,7 +30,7 @@ export const TEST_QUERIES: string[] = [
   'affordable flat with a great view, dog friendly',
 
   // Location as the only explicit constraint — isolates filters.location from the other
-  // fields, and (per seed-data.ts) only one listing is tagged "Manali, Himachal Pradesh",
+  // fields, and (per seed-eval-data.ts) only one listing is tagged "Manali, Himachal Pradesh",
   // so this also exercises the retrieval filter-relaxation fallback end-to-end.
   'a place to stay in Manali',
 ];

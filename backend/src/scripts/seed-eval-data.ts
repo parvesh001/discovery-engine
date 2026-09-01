@@ -1,14 +1,12 @@
-export interface SeedListing {
-  title: string;
-  rawDescription: string;
-  pricePerNight: number;
-  bedrooms: number;
-  location: string;
-  latitude: number;
-  longitude: number;
-}
+import type { SeedListing } from './seedTypes.js';
 
-export const seedListings: SeedListing[] = [
+/**
+ * The original 36-listing dataset (spec 02). Loaded by `pnpm --filter backend run seed`
+ * for local, CI, and test use — never shipped to the deployed demo, which uses
+ * `seed-demo-data.ts` instead (spec 12). The eval suite (`backend/src/evals/testCases.ts`)
+ * references specific titles in here — keep the two in sync if this data ever changes.
+ */
+export const evalSeedListings: SeedListing[] = [
   {
     title: 'Deodar Cottage, Old Manali',
     rawDescription: `A three-bedroom deodar-wood cottage in Old Manali with the Pir Panjal peaks right outside the balcony — there's snow on them well into April most years. Bukhari in the living room for the cold nights, hot geyser water in both attached bathrooms, and a caretaker on the property who'll cook you a decent meal if you ask nicely. This is a pet-friendly cottage — bring your dog along, we just need 24 hours' notice so the chowkidar can leave the gate unlatched for you. Covered parking for one car, Wi-Fi works most days.`,
