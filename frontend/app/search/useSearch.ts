@@ -1,7 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isNaiveSearchResponse, isSearchResponse, type NaiveSearchResponse, type SearchResponse } from './types';
+import { useRouter, useSearchParams } from 'next/navigation';
+import {
+  isBrowseResponse,
+  isNaiveSearchResponse,
+  isSearchResponse,
+  type BrowseResponse,
+  type NaiveSearchResponse,
+  type SearchResponse,
+} from './types';
+import { isDestinationSlug } from './destinations';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000';
 
@@ -19,15 +28,34 @@ export type NaiveColumnState =
   | { status: 'error'; message: string }
   | { status: 'success'; data: NaiveSearchResponse };
 
+export type BrowseState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'error'; message: string }
+  | { status: 'success'; data: BrowseResponse };
+
+/** picker → no destination chosen; browse → destination chosen, no active query; compare → scoped search results. */
+export type SearchMode = 'picker' | 'browse' | 'compare';
+
 const GENERIC_FETCH_ERROR = "Couldn't reach the search backend.";
-const RATE_LIMIT_ERROR =
-  "You're searching a bit too quickly. Please wait a moment and try again.";
+const RATE_LIMIT_ERROR = "You're searching a bit too quickly. Please wait a moment and try again.";
 
 export function useSearch() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // The URL is the single source of truth for the destination — deep-link / reload stable.
+  // An unknown ?destination= slug is treated as no destination (falls back to the picker).
+  const urlDestination = searchParams.get('destination');
+  const destination = isDestinationSlug(urlDestination) ? urlDestination : null;
+
   const [query, setQuery] = useState('');
+  const [submittedQuery, setSubmittedQuery] = useState('');
   const [ai, setAi] = useState<AiColumnState>({ status: 'idle' });
   const [naive, setNaive] = useState<NaiveColumnState>({ status: 'idle' });
+  const [browse, setBrowse] = useState<BrowseState>({ status: 'idle' });
   const stageTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const mode: SearchMode = destination === null ? 'picker' : submittedQuery ? 'compare' : 'browse';
 
   const clearStageTimers = useCallback(() => {
     stageTimers.current.forEach(clearTimeout);
@@ -36,12 +64,81 @@ export function useSearch() {
 
   useEffect(() => clearStageTimers, [clearStageTimers]);
 
+  const resetSearchColumns = useCallback(() => {
+    clearStageTimers();
+    setQuery('');
+    setSubmittedQuery('');
+    setAi({ status: 'idle' });
+    setNaive({ status: 'idle' });
+  }, [clearStageTimers]);
+
+  // Load the browse list whenever a valid destination is active (initial mount with a
+  // deep-linked ?destination=, or after selecting one). No AI pipeline — plain SQL read.
+  useEffect(() => {
+    if (destination === null) {
+      setBrowse({ status: 'idle' });
+      return;
+    }
+
+    let cancelled = false;
+    setBrowse({ status: 'loading' });
+
+    fetch(`${BACKEND_URL}/api/listings?destination=${encodeURIComponent(destination)}`)
+      .then(async (response) => {
+        if (cancelled) return;
+        if (response.status === 429) {
+          setBrowse({ status: 'error', message: RATE_LIMIT_ERROR });
+          return;
+        }
+        const body: unknown = await response.json().catch(() => undefined);
+        if (!response.ok || !isBrowseResponse(body)) {
+          setBrowse({ status: 'error', message: "Couldn't load listings for this destination." });
+          return;
+        }
+        setBrowse({ status: 'success', data: body });
+      })
+      .catch(() => {
+        if (!cancelled) setBrowse({ status: 'error', message: GENERIC_FETCH_ERROR });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [destination]);
+
+  // Clearing the input back to empty drops out of the compare view and back to browse.
+  const updateQuery = useCallback((value: string) => {
+    setQuery(value);
+    if (value.trim() === '') setSubmittedQuery('');
+  }, []);
+
+  const selectDestination = useCallback(
+    (slug: string) => {
+      resetSearchColumns();
+      router.push(`/search?destination=${encodeURIComponent(slug)}`);
+    },
+    [router, resetSearchColumns],
+  );
+
+  const changeDestination = useCallback(() => {
+    resetSearchColumns();
+    setBrowse({ status: 'idle' });
+    router.push('/search');
+  }, [router, resetSearchColumns]);
+
+  const backToBrowse = useCallback(() => {
+    resetSearchColumns();
+  }, [resetSearchColumns]);
+
   const submit = useCallback(
     async (rawQuery: string) => {
       const trimmed = rawQuery.trim();
       if (trimmed.length === 0) return;
+      // A scoped search requires a destination — the UI never renders the form without one.
+      if (destination === null) return;
 
       clearStageTimers();
+      setSubmittedQuery(trimmed);
       setAi({ status: 'loading', stage: 0 });
       setNaive({ status: 'loading' });
 
@@ -57,7 +154,7 @@ export function useSearch() {
       const aiRequest = fetch(`${BACKEND_URL}/api/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: trimmed }),
+        body: JSON.stringify({ query: trimmed, destination }),
       })
         .then(async (response) => {
           // Rate limiter (backend spec 10, req. 2) returns 429 with a non-SearchResponse
@@ -76,7 +173,9 @@ export function useSearch() {
         })
         .catch(() => setAi({ status: 'error', message: GENERIC_FETCH_ERROR }));
 
-      const naiveRequest = fetch(`${BACKEND_URL}/api/search/naive?q=${encodeURIComponent(trimmed)}`)
+      const naiveRequest = fetch(
+        `${BACKEND_URL}/api/search/naive?q=${encodeURIComponent(trimmed)}&destination=${encodeURIComponent(destination)}`,
+      )
         .then(async (response) => {
           // Shares the search rate limiter, so a 429 lands here too — same distinct message.
           if (response.status === 429) {
@@ -95,8 +194,20 @@ export function useSearch() {
       await Promise.all([aiRequest, naiveRequest]);
       clearStageTimers();
     },
-    [clearStageTimers],
+    [clearStageTimers, destination],
   );
 
-  return { query, setQuery, ai, naive, submit };
+  return {
+    destination,
+    mode,
+    query,
+    setQuery: updateQuery,
+    ai,
+    naive,
+    browse,
+    selectDestination,
+    changeDestination,
+    backToBrowse,
+    submit,
+  };
 }

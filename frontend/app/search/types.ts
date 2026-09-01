@@ -30,6 +30,8 @@ export type SearchResponse = {
 
 export type NaiveSearchResponse = { results: Listing[] };
 
+export type BrowseResponse = { results: Listing[]; destination: string };
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -55,4 +57,8 @@ export function isSearchResponse(value: unknown): value is SearchResponse {
 
 export function isNaiveSearchResponse(value: unknown): value is NaiveSearchResponse {
   return isRecord(value) && Array.isArray(value.results);
+}
+
+export function isBrowseResponse(value: unknown): value is BrowseResponse {
+  return isRecord(value) && Array.isArray(value.results) && typeof value.destination === 'string';
 }

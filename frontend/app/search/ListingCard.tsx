@@ -23,8 +23,16 @@ function asStringArray(value: unknown): string[] {
  * same `extracted_attributes` column as the AI pipeline, so that data can technically be
  * present on a naive row too — but naive never derived any understanding from it, so
  * showing it there would misattribute the AI pipeline's work to the dumb-match column.
+ * `browse` (spec 12) is the pre-search list view — like `naive`, it shows no AI-derived
+ * chips or scores.
  */
-export function ListingCard({ listing, variant }: { listing: Record<string, unknown>; variant: 'naive' | 'ai' }) {
+export function ListingCard({
+  listing,
+  variant,
+}: {
+  listing: Record<string, unknown>;
+  variant: 'naive' | 'ai' | 'browse';
+}) {
   const title = asString(listing.title) ?? 'Untitled listing';
   const price = asNumber(listing.price_per_night);
   const bedrooms = asNumber(listing.bedrooms);
