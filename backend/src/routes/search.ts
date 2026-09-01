@@ -6,14 +6,19 @@ import { runSearch, SearchRetrievalError } from '../services/search/orchestrateS
 import { logSearch } from '../services/search/searchLogs.js';
 import { naiveSearchListings } from '../services/search/naiveSearch.js';
 import { createRateLimiters, rateLimitMiddleware, type RateLimiterOverrides } from '../services/rateLimit/rateLimiter.js';
+import { destinationSlugSchema } from '../config/destinations.js';
 
 const MAX_QUERY_LENGTH = 200;
 
+// Optional and additive (spec 12): a request that omits `destination` keeps today's
+// global behaviour, so the eval harness and existing callers are unaffected. An unknown
+// slug is rejected by the enum below → the existing 400 path, never a silent fallback.
 const searchRequestSchema = z.object({
   query: z
     .string({ required_error: 'query is required' })
     .min(1, 'query must not be empty')
     .max(MAX_QUERY_LENGTH, `query must be at most ${MAX_QUERY_LENGTH} characters`),
+  destination: destinationSlugSchema.optional(),
 });
 
 const naiveSearchQuerySchema = z.object({
@@ -21,6 +26,7 @@ const naiveSearchQuerySchema = z.object({
     .string({ required_error: 'q is required' })
     .min(1, 'q must not be empty')
     .max(MAX_QUERY_LENGTH, `q must be at most ${MAX_QUERY_LENGTH} characters`),
+  destination: destinationSlugSchema.optional(),
 });
 
 export function searchRouter(pool: pg.Pool, redis: Redis, rateLimiterOverrides?: RateLimiterOverrides): Router {
@@ -38,7 +44,12 @@ export function searchRouter(pool: pg.Pool, redis: Redis, rateLimiterOverrides?:
     }
 
     try {
-      const { response, logEntry } = await runSearch(pool, parseResult.data.query, redis);
+      const { response, logEntry } = await runSearch(
+        pool,
+        parseResult.data.query,
+        redis,
+        parseResult.data.destination,
+      );
       res.status(200).json(response);
       void logSearch(pool, logEntry);
     } catch (error) {
@@ -59,7 +70,7 @@ export function searchRouter(pool: pg.Pool, redis: Redis, rateLimiterOverrides?:
     }
 
     try {
-      const results = await naiveSearchListings(pool, parseResult.data.q);
+      const results = await naiveSearchListings(pool, parseResult.data.q, parseResult.data.destination);
       res.status(200).json({ results });
     } catch (error) {
       console.error('[search] naive search failed:', error);

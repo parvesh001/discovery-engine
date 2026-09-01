@@ -113,8 +113,18 @@ async function runCandidateQuery(
   embeddingLiteral: string,
   extraClauses: string[],
   extraValues: unknown[],
+  destinationScope?: string,
 ): Promise<CandidateRow[]> {
   const whereClauses = [`ingestion_status = 'processed'`, ...extraClauses];
+  const params: unknown[] = [embeddingLiteral, ...extraValues];
+
+  // Authoritative demo scope (spec 12): a base WHERE clause, next to
+  // ingestion_status — applied to every pass, including the relaxed hard-only one below,
+  // so it is enforced in SQL and never dropped by relaxation.
+  if (destinationScope !== undefined) {
+    params.push(destinationScope);
+    whereClauses.push(`destination = $${params.length}`);
+  }
 
   const query = `
     SELECT ${CANDIDATE_COLUMNS},
@@ -125,7 +135,7 @@ async function runCandidateQuery(
     LIMIT ${MAX_CANDIDATES}
   `;
 
-  const { rows } = await pool.query<CandidateRow>(query, [embeddingLiteral, ...extraValues]);
+  const { rows } = await pool.query<CandidateRow>(query, params);
   return rows;
 }
 
@@ -141,11 +151,17 @@ function toRankedCandidate(row: CandidateRow): RankedCandidate {
  * explicitly (rather than the literal single-arg spec signature) so this can be exercised
  * against `getTestDatabaseUrl()` in tests, matching every other DB-touching service in
  * this codebase (`runIngestion(pool)`, `seedDatabase(pool, listings)`).
+ *
+ * `destinationScope` (spec 12) is the demo's authoritative location filter: when set, it
+ * is ANDed into the base WHERE of every candidate query — the full-filter pass and the
+ * relaxed hard-only pass alike — so it is enforced in SQL and never relaxed. It is passed
+ * by the route/orchestrator from a validated slug, never inferred from the query text.
  */
 export async function retrieveCandidates(
   pool: pg.Pool,
   intent: QueryIntent,
   langfuseParent?: LangfuseParent | null,
+  destinationScope?: string,
 ): Promise<RetrievalResult> {
   const { embedding, tokens: embeddingTokens } = await generateEmbedding(
     intent.semantic_query,
@@ -158,7 +174,7 @@ export async function retrieveCandidates(
   const { clauses, values } = buildFilterClauses(intent.filters, { includeSoft: true });
   const hasSoftFilters = intent.filters.property_type !== null || intent.filters.location !== null;
 
-  const fullyFilteredRows = await runCandidateQuery(pool, embeddingLiteral, clauses, values);
+  const fullyFilteredRows = await runCandidateQuery(pool, embeddingLiteral, clauses, values, destinationScope);
 
   // Relaxation only fires when there's a soft filter to drop, and only ever drops the
   // soft tier — hard constraints (pet_friendly, min_bedrooms, max_price) stay enforced in
@@ -166,7 +182,13 @@ export async function retrieveCandidates(
   // dropping soft filters still isn't enough, that thin/empty hard-filtered set is final.
   if (hasSoftFilters && fullyFilteredRows.length < MIN_CANDIDATES_BEFORE_RELAXATION) {
     const hardOnly = buildFilterClauses(intent.filters, { includeSoft: false });
-    const hardOnlyRows = await runCandidateQuery(pool, embeddingLiteral, hardOnly.clauses, hardOnly.values);
+    const hardOnlyRows = await runCandidateQuery(
+      pool,
+      embeddingLiteral,
+      hardOnly.clauses,
+      hardOnly.values,
+      destinationScope,
+    );
     return { candidates: hardOnlyRows.map(toRankedCandidate), filtersRelaxed: true, embeddingTokens };
   }
 

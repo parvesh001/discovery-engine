@@ -23,8 +23,15 @@ export function normalizeQuery(rawQuery: string): string {
   return rawQuery.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-function buildCacheKey(rawQuery: string): string {
-  return `${CACHE_KEY_PREFIX}${normalizeQuery(rawQuery)}`;
+/**
+ * `destination` (spec 12) namespaces the key so a destination-scoped search and a global
+ * search for the same text never serve each other's cached results. Omitting it keeps the
+ * key byte-identical to the pre-Phase-11 format, so existing (unscoped) cache entries and
+ * the eval path are unaffected.
+ */
+function buildCacheKey(rawQuery: string, destination?: string): string {
+  const scope = destination === undefined ? '' : `${destination}:`;
+  return `${CACHE_KEY_PREFIX}${scope}${normalizeQuery(rawQuery)}`;
 }
 
 /**
@@ -32,8 +39,12 @@ function buildCacheKey(rawQuery: string): string {
  * break search (same graceful-degradation spirit as the rest of the pipeline, CLAUDE.md
  * rule #3's "no LLM call can hard-crash a request" extended to this new dependency).
  */
-export async function getCachedSearch(redis: Redis, rawQuery: string): Promise<CachedSearchEntry | null> {
-  const key = buildCacheKey(rawQuery);
+export async function getCachedSearch(
+  redis: Redis,
+  rawQuery: string,
+  destination?: string,
+): Promise<CachedSearchEntry | null> {
+  const key = buildCacheKey(rawQuery, destination);
   try {
     const raw = await redis.get(key);
     if (raw === null) {
@@ -48,8 +59,13 @@ export async function getCachedSearch(redis: Redis, rawQuery: string): Promise<C
   }
 }
 
-export async function setCachedSearch(redis: Redis, rawQuery: string, entry: CachedSearchEntry): Promise<void> {
-  const key = buildCacheKey(rawQuery);
+export async function setCachedSearch(
+  redis: Redis,
+  rawQuery: string,
+  entry: CachedSearchEntry,
+  destination?: string,
+): Promise<void> {
+  const key = buildCacheKey(rawQuery, destination);
   try {
     await redis.set(key, JSON.stringify(entry), 'EX', CACHE_TTL_SECONDS);
   } catch (error) {
