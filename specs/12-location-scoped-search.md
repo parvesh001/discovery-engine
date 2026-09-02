@@ -46,6 +46,30 @@ from free text, never relaxed.
   it** — the "same crowd" entries (Kasol, Tosh, Manikaran, Kullu-valley) are intended to
   show under Manali.
 
+## Revised During Implementation (Phase 11)
+
+Two decisions above were deliberately revised while building. Documented here rather than
+silently diverging, same as every other locked-decision change in this build.
+
+- **No picker-only screen; the destination toggle is the only switcher** (revises §5.1,
+  §5.4, §5.5). The original design had a first-run screen showing *only* the Manali/Goa
+  picker with nothing else. Instead: on load with no `?destination=`, default to the first
+  registry entry (Manali) immediately and render the destination toggle **and** its browse
+  results together from the very first paint. The Manali/Goa buttons already function as a
+  toggle that resets the query and re-browses on click, so the separate "Change
+  destination" control is removed as redundant — clicking the other toggle button does
+  everything it did. There is no longer a `picker` UI mode; modes are `browse` and
+  `compare` only.
+
+- **Browse order is the curated seed order, not price** (revises §2.2). `ORDER BY` becomes
+  `created_at ASC, id ASC`. The original "price ascending because `created_at` is uniform
+  across a single seed batch" reasoning is superseded: `seed-demo.ts` now writes an
+  explicit, strictly-increasing `created_at` per row (base time + row index) so that
+  `created_at ASC` reproduces exactly the `seed-demo-data.ts` array order —
+  `manaliListings` in file order, then `goaListings` in file order. `id ASC` remains only
+  as a defensive tiebreaker (never actually needed once `created_at` is distinct per row).
+  This makes the file the single, human-editable source of the browse sequence.
+
 ## Functional Requirements
 
 ### 1. Destination scope — data model & registry
@@ -83,11 +107,11 @@ from free text, never relaxed.
    FROM listings
    WHERE ingestion_status = 'processed'
      AND destination = $1
-   ORDER BY price_per_night ASC NULLS LAST, id ASC
+   ORDER BY created_at ASC, id ASC
    ```
-   Deterministic order, price ascending. (`created_at` is uniform across a single seed
-   batch, so recency ordering would be arbitrary without deliberately staggering
-   timestamps — price ascending is the sensible, stable choice.)
+   Order is the curated `seed-demo-data.ts` array order (see "Revised During
+   Implementation"): `seed-demo.ts` writes a strictly-increasing `created_at` per row so
+   `created_at ASC` reproduces the file's sequence; `id ASC` is a defensive tiebreaker.
 3. `destination` is **required** on this endpoint. Missing or unknown → `400`.
 4. Returns `{ results: Listing[], destination: string }`, `Listing` being the exact shape
    `/api/search/naive` already returns (`id, title, raw_description, price_per_night,
@@ -157,6 +181,10 @@ from free text, never relaxed.
    - Mirrors `seed.ts`: load `dotenv`, `TRUNCATE TABLE listings CASCADE` inside a
      transaction, bulk insert. Additionally writes the `destination` column from each
      row's tag.
+   - Writes an explicit `created_at` per row, strictly increasing in `demoListings` order
+     (e.g. `base + rowIndex` seconds), so the browse endpoint's `ORDER BY created_at ASC`
+     reproduces the curated file order. A single bulk `INSERT` shares one transaction
+     timestamp otherwise, which would leave order to the random `id`.
    - `extracted_attributes` / `embedding` left `NULL`; `ingestion_status` defaults to
      `'pending'` — identical to the eval seed's contract, so the existing
      `ingest` → `ingest:worker` flow processes the demo rows with no changes.
@@ -172,6 +200,9 @@ from free text, never relaxed.
      eval band assertions: the demo set intentionally exceeds ₹18,000 (Goa villas up to
      ₹22,000).
    - Asserts no duplicate `rawDescription` across the combined set.
+   The DB-level `seed-demo.test.ts` additionally asserts that reading rows back
+   `ORDER BY created_at ASC, id ASC` yields the `demoListings` array order (so a browse
+   regression is caught without a live server).
 6. `seed.ts` (now seeding `evalSeedListings`) and `pnpm --filter backend run seed` are
    unchanged in behavior — still the local / CI / test path, still 36 rows, `destination`
    NULL.
@@ -181,29 +212,29 @@ from free text, never relaxed.
    the adversarial-injection case (`Riverside Studio, Rishikesh`) keep referencing their
    original listings.
 
-### 5. Frontend — picker + browse-before-search
+### 5. Frontend — browse-first, with an inline destination toggle
 
-1. `/frontend/app/search` gains a destination step ahead of the search box:
-   - First load, no destination chosen: render only the picker (Manali / Goa). No results
-     area, no empty naive/AI columns.
-   - The selected destination is reflected in the URL as `?destination=<slug>` (shareable,
-     reload-stable for the demo). Loading with a valid `?destination=` goes straight to
-     the browse view; an invalid slug falls back to the picker.
-2. **Browse view** (destination chosen, search box empty): on selection / load, call
-   `GET /api/listings?destination=<slug>` and render results with the existing
-   `ListingCard` in a single list (not the two-column compare layout). A heading names the
-   destination and the result count. No AI, no pipeline trace. If the destination has zero
-   processed listings, show a plain "nothing to show yet" state, not an error.
-3. **Search view** (destination chosen, query submitted non-empty): the existing
-   naive-vs-AI comparison, unchanged in layout and behavior, except both requests carry
-   `destination`:
+1. `/frontend/app/search` renders the destination toggle and its browse results together
+   from the first paint — there is no picker-only intermediate screen:
+   - On load with a valid `?destination=<slug>`, that is the active destination.
+   - On load with no / an invalid `?destination=`, the active destination defaults to the
+     first registry entry (Manali). The URL is not force-rewritten on a bare visit; the
+     toggle writes `?destination=<slug>` when the user picks one (shareable, reload-stable).
+   - There are two UI modes only: `browse` and `compare`. No `picker` mode.
+2. **Browse mode** (no active query): call `GET /api/listings?destination=<slug>` on load
+   and whenever the destination changes, and render results with the existing `ListingCard`
+   in a single list (not the two-column compare layout), in the endpoint's order. A
+   heading names the destination and the result count. No AI, no pipeline trace. Zero
+   processed listings → a plain "nothing to show yet" state, not an error.
+3. **Compare mode** (query submitted non-empty): the existing naive-vs-AI comparison,
+   unchanged in layout and behavior, except both requests carry `destination`:
    - `POST /api/search` body `{ query, destination }`.
    - `GET /api/search/naive?q=<query>&destination=<slug>`.
    - Copy makes the scope explicit ("Searching within Manali").
-4. Clearing the query back to empty returns to the browse view without a full reload.
-   Changing the destination re-runs browse and clears any active query and results.
-5. A visible affordance to change destination is present in both views.
-6. Tailwind, responsive, semantic HTML with ARIA: the picker has radio-group semantics,
+4. Clearing the query back to empty returns to browse mode without a full reload. Clicking
+   the other toggle button switches destination — which resets any active query and
+   re-browses. There is **no** separate "Change destination" control; the toggle is it.
+5. Tailwind, responsive, semantic HTML with ARIA: the toggle has radio-group semantics,
    the search input keeps its Phase 7 labeling.
 
 ## Interfaces
@@ -253,8 +284,8 @@ pnpm --filter backend run seed:demo    // TRUNCATE + load the 72-listing demo da
   built.
 - No `min_price` / price-range filtering — newly recorded in `specs/00-architecture.md`,
   not built here.
-- No pagination, infinite scroll, or sort controls on the browse view (fixed price-asc
-  order).
+- No pagination, infinite scroll, or sort controls on the browse view (fixed order — the
+  curated `seed-demo-data.ts` sequence via `created_at ASC, id ASC`).
 - No map UI, no geolocation capture.
 - No change to query understanding, retrieval ranking, rerank, caching, or observability
   beyond threading one optional scope argument.
@@ -271,16 +302,17 @@ pnpm --filter backend run seed:demo    // TRUNCATE + load the 72-listing demo da
 - [ ] Migration adds `listings.destination` + the partial index; `migrate:up` and
       `migrate:down` both succeed.
 - [ ] `pnpm --filter backend run seed:demo` loads exactly 72 rows — 35 with
-      `destination = 'manali'`, 37 with `destination = 'goa'`, 0 NULL — and is safely
-      re-runnable.
+      `destination = 'manali'`, 37 with `destination = 'goa'`, 0 NULL — is safely
+      re-runnable, and reading rows back `ORDER BY created_at ASC, id ASC` yields the
+      `demoListings` array order.
 - [ ] `pnpm --filter backend run seed` still loads exactly 36 rows, all `destination`
       NULL; `seed-eval-data.test.ts` passes unchanged in substance.
 - [ ] Full eval suite (`pnpm --filter backend run eval`) passes at or above its existing
       threshold with no edits to `testCases.ts` — including the Goa pet-friendly
       trust-bug case and the adversarial-injection case.
 - [ ] `GET /api/listings?destination=manali` returns only Manali-tagged processed
-      listings in price-ascending order; `?destination=goa` likewise; missing or unknown
-      slug → `400`.
+      listings in the curated `seed-demo-data.ts` order (`manaliListings` file order);
+      `?destination=goa` likewise; missing or unknown slug → `400`.
 - [ ] After `seed:demo` + ingestion, `POST /api/search { query: "pet friendly cottage",
       destination: "manali" }` returns only Manali listings; a Goa listing never appears
       regardless of semantic similarity.
@@ -288,12 +320,13 @@ pnpm --filter backend run seed:demo    // TRUNCATE + load the 72-listing demo da
       returns only in-destination listings (scope survives relaxation).
 - [ ] `POST /api/search { query }` with no `destination` returns results identical to
       pre-phase behavior for a sample of eval queries.
-- [ ] Frontend: a fresh load shows only the picker; choosing Manali populates a browse
-      list on load and sets `?destination=manali`; reloading that URL lands directly on
-      the Manali browse view.
+- [ ] Frontend: a fresh load (no `?destination=`) shows the Manali/Goa toggle **and** the
+      Manali browse list together immediately — no picker-only screen. Clicking **Goa**
+      swaps the list and sets `?destination=goa`; reloading that URL lands on the Goa
+      browse list. There is no separate "Change destination" button.
 - [ ] Typing and submitting a query switches to the naive-vs-AI compare view scoped to
-      the chosen destination; clearing the query returns to browse; switching destination
-      resets the query and re-browses.
+      the chosen destination; clearing the query returns to browse; clicking the other
+      toggle button resets the query and re-browses.
 - [ ] `DEPLOYMENT.md` documents `seed:demo` as the production catalogue loader with a
       data-loss warning at the same severity as the existing `seed` warning, and its
       post-deploy smoke test covers a browse check and a scoped-search check per
@@ -303,9 +336,8 @@ pnpm --filter backend run seed:demo    // TRUNCATE + load the 72-listing demo da
 
 ## Open Questions Claude Code Should Ask If Unclear
 
-- Exact browse-view heading copy and the "change destination" affordance's placement /
-  wording — pick something clean and confirm during implementation rather than guessing at
-  final copy now.
+- Exact browse-view heading copy — pick something clean during implementation rather than
+  guessing at final copy now.
 - Whether the "back to browse" transition is triggered purely by the search input going
   empty, or also needs an explicit button — confirm the interaction before building the
   component, since it affects state structure in `useSearch`.
