@@ -51,6 +51,20 @@ describe('seedDemoDatabase', () => {
     expect(Number(result.rows[0].count)).toBe(72);
   });
 
+  it('fabricates a distinct, strictly-increasing created_at so browse order == demoListings order', async () => {
+    await seedDemoDatabase(pool);
+
+    const distinct = await pool.query('SELECT count(DISTINCT created_at)::int AS n FROM listings');
+    expect(distinct.rows[0].n).toBe(72);
+
+    // The browse endpoint's exact ORDER BY — must reproduce the curated file sequence
+    // (manaliListings in order, then goaListings in order).
+    const ordered = await pool.query<{ title: string }>(
+      'SELECT title FROM listings ORDER BY created_at ASC, id ASC',
+    );
+    expect(ordered.rows.map((r) => r.title)).toEqual(demoListings.map((l) => l.title));
+  });
+
   it('accepts an injected listing set for isolated testing', async () => {
     const [firstListing] = demoListings;
     if (!firstListing) throw new Error('demoListings is empty — cannot run this test');

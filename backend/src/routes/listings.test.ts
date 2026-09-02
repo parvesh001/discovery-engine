@@ -20,36 +20,48 @@ beforeEach(async () => {
   await redis.flushdb();
 });
 
+// `createdAt` is set explicitly per row: the browse endpoint orders by `created_at ASC,
+// id ASC`, and seed-demo.ts fabricates that column to encode curated order (spec 12,
+// "Revised During Implementation"). Passing it here keeps these tests deterministic rather
+// than leaning on wall-clock ordering between sequential INSERTs.
 async function insert(
   title: string,
   destination: string | null,
-  opts: { price?: number; status?: string } = {},
+  opts: { price?: number; status?: string; createdAt?: string } = {},
 ) {
   await pool.query(
     `INSERT INTO listings (title, raw_description, price_per_night, bedrooms, location, latitude, longitude,
-                            ingestion_status, destination)
-     VALUES ($1, 'A listing.', $2, 1, 'Test', 0, 0, $3, $4)`,
-    [title, opts.price ?? 1000, opts.status ?? 'processed', destination],
+                            ingestion_status, destination, created_at)
+     VALUES ($1, 'A listing.', $2, 1, 'Test', 0, 0, $3, $4, $5)`,
+    [
+      title,
+      opts.price ?? 1000,
+      opts.status ?? 'processed',
+      destination,
+      opts.createdAt ?? '2020-01-01T00:00:00.000Z',
+    ],
   );
 }
 
 describe('GET /api/listings', () => {
-  it('returns only processed listings for the requested destination, price-ascending', async () => {
-    await insert('Manali Pricey', 'manali', { price: 5000 });
-    await insert('Manali Cheap', 'manali', { price: 1000 });
-    await insert('Manali Mid', 'manali', { price: 3000 });
-    await insert('Goa One', 'goa', { price: 2000 });
-    await insert('Unscoped', null, { price: 500 });
-    await insert('Manali Pending', 'manali', { price: 100, status: 'pending' });
+  it('returns processed listings for the destination in created_at (curated) order, not price order', async () => {
+    // Insert in the intended display order with ascending created_at, prices deliberately
+    // NOT monotonic — proves the endpoint honours created_at, not price.
+    await insert('Manali First', 'manali', { price: 5000, createdAt: '2020-01-01T00:00:01.000Z' });
+    await insert('Manali Second', 'manali', { price: 1000, createdAt: '2020-01-01T00:00:02.000Z' });
+    await insert('Manali Third', 'manali', { price: 3000, createdAt: '2020-01-01T00:00:03.000Z' });
+    await insert('Goa One', 'goa', { price: 2000, createdAt: '2020-01-01T00:00:00.500Z' });
+    await insert('Unscoped', null, { price: 500, createdAt: '2020-01-01T00:00:00.100Z' });
+    await insert('Manali Pending', 'manali', { price: 100, status: 'pending', createdAt: '2020-01-01T00:00:00.200Z' });
 
     const response = await request(app).get('/api/listings').query({ destination: 'manali' });
 
     expect(response.status).toBe(200);
     expect(response.body.destination).toBe('manali');
     expect(response.body.results.map((r: { title: string }) => r.title)).toEqual([
-      'Manali Cheap',
-      'Manali Mid',
-      'Manali Pricey',
+      'Manali First',
+      'Manali Second',
+      'Manali Third',
     ]);
   });
 
