@@ -10,7 +10,7 @@ import {
   type NaiveSearchResponse,
   type SearchResponse,
 } from './types';
-import { isDestinationSlug } from './destinations';
+import { DEFAULT_DESTINATION_SLUG, isDestinationSlug } from './destinations';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000';
 
@@ -34,8 +34,8 @@ export type BrowseState =
   | { status: 'error'; message: string }
   | { status: 'success'; data: BrowseResponse };
 
-/** picker → no destination chosen; browse → destination chosen, no active query; compare → scoped search results. */
-export type SearchMode = 'picker' | 'browse' | 'compare';
+/** browse → no active query (default view); compare → a query has been submitted. */
+export type SearchMode = 'browse' | 'compare';
 
 const GENERIC_FETCH_ERROR = "Couldn't reach the search backend.";
 const RATE_LIMIT_ERROR = "You're searching a bit too quickly. Please wait a moment and try again.";
@@ -43,10 +43,13 @@ const RATE_LIMIT_ERROR = "You're searching a bit too quickly. Please wait a mome
 export function useSearch() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // The URL is the single source of truth for the destination — deep-link / reload stable.
-  // An unknown ?destination= slug is treated as no destination (falls back to the picker).
+  // The URL is the source of truth for the destination — deep-link / reload stable. There
+  // is no "no destination" state (spec 12, "Revised During Implementation"): a missing or
+  // unknown ?destination= defaults to the first registry entry, so the toggle + browse
+  // list render together from the first paint. The URL is only rewritten once the user
+  // actually picks (selectDestination), not on a bare visit.
   const urlDestination = searchParams.get('destination');
-  const destination = isDestinationSlug(urlDestination) ? urlDestination : null;
+  const destination = isDestinationSlug(urlDestination) ? urlDestination : DEFAULT_DESTINATION_SLUG;
 
   const [query, setQuery] = useState('');
   const [submittedQuery, setSubmittedQuery] = useState('');
@@ -55,7 +58,7 @@ export function useSearch() {
   const [browse, setBrowse] = useState<BrowseState>({ status: 'idle' });
   const stageTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  const mode: SearchMode = destination === null ? 'picker' : submittedQuery ? 'compare' : 'browse';
+  const mode: SearchMode = submittedQuery ? 'compare' : 'browse';
 
   const clearStageTimers = useCallback(() => {
     stageTimers.current.forEach(clearTimeout);
@@ -72,14 +75,9 @@ export function useSearch() {
     setNaive({ status: 'idle' });
   }, [clearStageTimers]);
 
-  // Load the browse list whenever a valid destination is active (initial mount with a
-  // deep-linked ?destination=, or after selecting one). No AI pipeline — plain SQL read.
+  // Load the browse list on mount and whenever the destination changes (there is always a
+  // destination — see above). No AI pipeline — plain SQL read.
   useEffect(() => {
-    if (destination === null) {
-      setBrowse({ status: 'idle' });
-      return;
-    }
-
     let cancelled = false;
     setBrowse({ status: 'loading' });
 
@@ -120,12 +118,6 @@ export function useSearch() {
     [router, resetSearchColumns],
   );
 
-  const changeDestination = useCallback(() => {
-    resetSearchColumns();
-    setBrowse({ status: 'idle' });
-    router.push('/search');
-  }, [router, resetSearchColumns]);
-
   const backToBrowse = useCallback(() => {
     resetSearchColumns();
   }, [resetSearchColumns]);
@@ -134,8 +126,6 @@ export function useSearch() {
     async (rawQuery: string) => {
       const trimmed = rawQuery.trim();
       if (trimmed.length === 0) return;
-      // A scoped search requires a destination — the UI never renders the form without one.
-      if (destination === null) return;
 
       clearStageTimers();
       setSubmittedQuery(trimmed);
@@ -206,7 +196,6 @@ export function useSearch() {
     naive,
     browse,
     selectDestination,
-    changeDestination,
     backToBrowse,
     submit,
   };

@@ -9,111 +9,91 @@ import { destinationLabel } from './destinations';
 import { LOADING_STAGES, useSearch } from './useSearch';
 
 export function SearchExperience() {
-  const { destination, mode, query, setQuery, ai, naive, browse, selectDestination, changeDestination, backToBrowse, submit } =
-    useSearch();
+  const { destination, mode, query, setQuery, ai, naive, browse, selectDestination, backToBrowse, submit } = useSearch();
   const isLoading = ai.status === 'loading' || naive.status === 'loading';
   const submittedQuery = query.trim();
-  const label = destination ? destinationLabel(destination) : '';
+  const label = destinationLabel(destination);
 
   return (
     <main className="min-h-screen bg-graphite px-4 py-10 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-5xl">
         <h1 className="font-heading text-2xl font-semibold text-signal">Discovery Search</h1>
         <p className="mt-1 text-sm text-mist">
-          Pick a destination, browse what&rsquo;s there, then compare a naive keyword search against the
-          AI-powered semantic pipeline — scoped to that destination.
+          Browse a destination, then compare a naive keyword search against the AI-powered semantic
+          pipeline — scoped to that destination.
         </p>
 
-        {mode === 'picker' ? (
-          <div className="mt-8">
-            <DestinationPicker value={destination} onSelect={selectDestination} layout="hero" />
+        <div className="mt-6">
+          <DestinationPicker value={destination} onSelect={selectDestination} />
+        </div>
+
+        <div className="mt-4">
+          <SearchForm value={query} onChange={setQuery} onSubmit={() => submit(query)} disabled={isLoading} />
+        </div>
+
+        {mode === 'browse' && (
+          <div className="mt-6">
+            <BrowseResults destination={destination} state={browse} />
           </div>
-        ) : (
+        )}
+
+        {mode === 'compare' && (
           <>
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-              <DestinationPicker value={destination} onSelect={selectDestination} layout="inline" />
-              <button
-                type="button"
-                onClick={changeDestination}
-                className="rounded-md border border-hairline px-3 py-1.5 text-xs font-medium text-mist hover:border-flare/60 hover:text-signal"
-              >
-                Change destination
+            <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <button type="button" onClick={backToBrowse} className="text-xs font-medium text-flare hover:underline">
+                &larr; Back to all {label} stays
               </button>
+              <span className="text-sm text-mist">
+                Searching within <span className="font-semibold text-signal">{label}</span>
+              </span>
             </div>
 
-            <div className="mt-4">
-              <SearchForm value={query} onChange={setQuery} onSubmit={() => submit(query)} disabled={isLoading} />
+            {/* Visually hidden: the PipelineTrace stepper is aria-hidden and purely decorative,
+                so this is the only announcement screen readers get for stage progress. */}
+            <div className="sr-only" aria-live="polite">
+              {ai.status === 'loading' && LOADING_STAGES[ai.stage]}
             </div>
 
-            {mode === 'browse' && destination && (
-              <div className="mt-6">
-                <BrowseResults destination={destination} state={browse} />
-              </div>
-            )}
-
-            {mode === 'compare' && destination && (
-              <>
-                <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <button
-                    type="button"
-                    onClick={backToBrowse}
-                    className="text-xs font-medium text-flare hover:underline"
-                  >
-                    &larr; Back to all {label} stays
-                  </button>
-                  <span className="text-sm text-mist">
-                    Searching within <span className="font-semibold text-signal">{label}</span>
-                  </span>
-                </div>
-
-                {/* Visually hidden: the PipelineTrace stepper is aria-hidden and purely decorative,
-                    so this is the only announcement screen readers get for stage progress. */}
-                <div className="sr-only" aria-live="polite">
-                  {ai.status === 'loading' && LOADING_STAGES[ai.stage]}
-                </div>
-
-                <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2">
-                  <ResultsColumn
-                    id="naive"
-                    heading="Naive search (ILIKE)"
-                    variant="naive"
-                    status={naive.status}
-                    loadingLabel="Searching…"
-                    errorMessage={naive.status === 'error' ? naive.message : undefined}
-                    listings={naive.status === 'success' ? naive.data.results : undefined}
-                    emptyMessage={`0 rows matched '%${submittedQuery}%' in ${label}`}
-                    trace={
-                      submittedQuery && naive.status !== 'idle' ? (
-                        <p className="font-mono text-xs text-mist" aria-hidden="true">
-                          MATCH ILIKE {"'%"}
-                          {submittedQuery}
-                          {"%'"} · destination = {destination} · no ranking
-                        </p>
-                      ) : undefined
-                    }
-                  />
-                  <ResultsColumn
-                    id="ai"
-                    heading="AI pipeline"
-                    variant="ai"
-                    status={ai.status}
-                    loadingLabel="Working…"
-                    errorMessage={ai.status === 'error' ? ai.message : undefined}
-                    listings={ai.status === 'success' ? ai.data.results : undefined}
-                    emptyMessage="No results found."
-                    filtersRelaxed={ai.status === 'success' ? ai.data.filtersRelaxed : undefined}
-                    degraded={ai.status === 'success' ? ai.data.degraded : undefined}
-                    trace={
-                      ai.status === 'loading' ? (
-                        <PipelineTrace status="loading" stage={ai.stage} />
-                      ) : ai.status === 'success' ? (
-                        <PipelineTrace status="success" timing={ai.data.timing} />
-                      ) : undefined
-                    }
-                  />
-                </div>
-              </>
-            )}
+            <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2">
+              <ResultsColumn
+                id="naive"
+                heading="Naive search (ILIKE)"
+                variant="naive"
+                status={naive.status}
+                loadingLabel="Searching…"
+                errorMessage={naive.status === 'error' ? naive.message : undefined}
+                listings={naive.status === 'success' ? naive.data.results : undefined}
+                emptyMessage={`0 rows matched '%${submittedQuery}%' in ${label}`}
+                trace={
+                  submittedQuery && naive.status !== 'idle' ? (
+                    <p className="font-mono text-xs text-mist" aria-hidden="true">
+                      MATCH ILIKE {"'%"}
+                      {submittedQuery}
+                      {"%'"} · destination = {destination} · no ranking
+                    </p>
+                  ) : undefined
+                }
+              />
+              <ResultsColumn
+                id="ai"
+                heading="AI pipeline"
+                variant="ai"
+                status={ai.status}
+                loadingLabel="Working…"
+                errorMessage={ai.status === 'error' ? ai.message : undefined}
+                listings={ai.status === 'success' ? ai.data.results : undefined}
+                emptyMessage="No results found."
+                filtersRelaxed={ai.status === 'success' ? ai.data.filtersRelaxed : undefined}
+                degraded={ai.status === 'success' ? ai.data.degraded : undefined}
+                trace={
+                  ai.status === 'loading' ? (
+                    <PipelineTrace status="loading" stage={ai.stage} />
+                  ) : ai.status === 'success' ? (
+                    <PipelineTrace status="success" timing={ai.data.timing} />
+                  ) : undefined
+                }
+              />
+            </div>
           </>
         )}
       </div>

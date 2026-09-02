@@ -11,7 +11,7 @@ type BrowseResultsProps = {
 
 /**
  * Browse-before-search list (spec 12 §5.2): every processed listing in the chosen
- * destination, price-ascending, straight from `GET /api/listings` — no AI pipeline, no
+ * destination, straight from `GET /api/listings` in its curated order — no AI pipeline, no
  * pipeline trace, single column (not the naive-vs-AI compare layout).
  */
 export function BrowseResults({ destination, state }: BrowseResultsProps) {
@@ -31,8 +31,8 @@ export function BrowseResults({ destination, state }: BrowseResultsProps) {
         )}
       </div>
       <p className="mt-0.5 text-sm text-mist">
-        Everything we have in {label}, cheapest first. Search above to compare naive keyword matching
-        against the AI pipeline — within {label}.
+        Everything we have in {label}. Search above to compare naive keyword matching against the AI
+        pipeline — within {label}.
       </p>
 
       {state.status === 'loading' && <p className="mt-4 text-sm text-mist">Loading {label} listings…</p>}

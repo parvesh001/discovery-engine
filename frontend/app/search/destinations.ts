@@ -10,6 +10,9 @@ export const DESTINATIONS: Destination[] = [
   { slug: 'goa', label: 'Goa' },
 ];
 
+/** The destination shown when the URL carries no (valid) ?destination= — spec 12 §5.1. */
+export const DEFAULT_DESTINATION_SLUG: string = DESTINATIONS[0]?.slug ?? 'manali';
+
 export function isDestinationSlug(value: string | null | undefined): value is string {
   return typeof value === 'string' && DESTINATIONS.some((d) => d.slug === value);
 }
