@@ -53,11 +53,17 @@ export class SearchRetrievalError extends Error {
  * A single Langfuse trace (spec 09) spans the whole request: query_understanding is a
  * real Claude generation, embedding and rerank are Voyage spans — all three attached as
  * children of `trace` so they show up nested under one search in the Langfuse dashboard.
+ *
+ * `destination` (spec 12) is an optional, pre-validated demo scope slug. When present it
+ * namespaces the cache key and is passed to retrieveCandidates as an authoritative,
+ * non-relaxable SQL filter. Absent → today's global behaviour, unchanged (the eval
+ * harness and any other caller that omits it are unaffected).
  */
 export async function runSearch(
   pool: pg.Pool,
   rawQuery: string,
   redis: Redis,
+  destination?: string,
 ): Promise<{ response: SearchResponse; logEntry: SearchLogEntry }> {
   const totalStart = Date.now();
 
@@ -65,7 +71,7 @@ export async function runSearch(
   // hit skips Claude *and* Voyage entirely (spec 10, requirement 3's NFR: a cache hit must
   // reduce LLM API cost, not just latency). See the spec's Post-Merge Amendment (cache key
   // scope) for why the key is normalized query text alone.
-  const cached = await getCachedSearch(redis, rawQuery);
+  const cached = await getCachedSearch(redis, rawQuery, destination);
   if (cached) {
     const total_ms = Date.now() - totalStart;
     const resultIds = cached.response.results.map((r) => r.id);
@@ -120,7 +126,7 @@ export async function runSearch(
   const retrievalStart = Date.now();
   let retrieval: Awaited<ReturnType<typeof retrieveCandidates>>;
   try {
-    retrieval = await retrieveCandidates(pool, intent, trace);
+    retrieval = await retrieveCandidates(pool, intent, trace, destination);
   } catch (error) {
     console.error('[search] retrieveCandidates failed:', error);
     const partialLogEntry: SearchLogEntry = {
@@ -173,7 +179,7 @@ export async function runSearch(
   // stage reflects a transient failure, and caching that for 10 minutes would replay it to
   // every repeated query in that window instead of letting the next request retry cleanly.
   if (understandingSucceeded && !rerankOutcome.degraded) {
-    await setCachedSearch(redis, rawQuery, { response, intent });
+    await setCachedSearch(redis, rawQuery, { response, intent }, destination);
   }
 
   return { response, logEntry };

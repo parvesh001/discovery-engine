@@ -97,7 +97,7 @@ describe('runSearch — happy path', () => {
 
     const { response, logEntry } = await runSearch(pool, 'cabin with a mountain view', redis);
 
-    expect(retrieveCandidatesMock).toHaveBeenCalledWith(pool, realIntent, null);
+    expect(retrieveCandidatesMock).toHaveBeenCalledWith(pool, realIntent, null, undefined);
     expect(rerankMock).toHaveBeenCalledWith(realIntent.semantic_query, candidates, null);
 
     expect(response.degraded).toBe(false);
@@ -138,6 +138,42 @@ describe('runSearch — happy path', () => {
   });
 });
 
+describe('runSearch — destination scope (spec 12)', () => {
+  it('threads a validated destination to retrieveCandidates and namespaces the cache key', async () => {
+    understandQueryMock.mockResolvedValue(realUnderstandingResult);
+    const candidates = [makeCandidate('a', 0.9)];
+    retrieveCandidatesMock.mockResolvedValue({ candidates, filtersRelaxed: false, embeddingTokens: 15 });
+    rerankMock.mockResolvedValue({
+      results: candidates.map((c) => ({ ...c, relevanceScore: 0.5 })),
+      degraded: false,
+      tokens: 30,
+    });
+
+    await runSearch(pool, 'beachfront villa', redis, 'manali');
+
+    expect(retrieveCandidatesMock).toHaveBeenCalledWith(pool, realIntent, null, 'manali');
+    // Cache read + write both keyed under the destination namespace.
+    expect(vi.mocked(redis.get).mock.calls[0]?.[0]).toContain('manali:beachfront villa');
+    expect(vi.mocked(redis.set).mock.calls[0]?.[0]).toContain('manali:beachfront villa');
+  });
+
+  it('omitting the destination keeps the pre-Phase-11 (global) cache key and retrieval call', async () => {
+    understandQueryMock.mockResolvedValue(realUnderstandingResult);
+    const candidates = [makeCandidate('a', 0.9)];
+    retrieveCandidatesMock.mockResolvedValue({ candidates, filtersRelaxed: false, embeddingTokens: 15 });
+    rerankMock.mockResolvedValue({
+      results: candidates.map((c) => ({ ...c, relevanceScore: 0.5 })),
+      degraded: false,
+      tokens: 30,
+    });
+
+    await runSearch(pool, 'beachfront villa', redis);
+
+    expect(retrieveCandidatesMock).toHaveBeenCalledWith(pool, realIntent, null, undefined);
+    expect(vi.mocked(redis.get).mock.calls[0]?.[0]).toBe('search:v1:beachfront villa');
+  });
+});
+
 describe('runSearch — understandQuery failure', () => {
   it('falls back to the raw query with null filters and continues the pipeline', async () => {
     understandQueryMock.mockRejectedValue(new Error('Claude timed out'));
@@ -152,7 +188,7 @@ describe('runSearch — understandQuery failure', () => {
     const { logEntry } = await runSearch(pool, 'raw fallback query', redis);
 
     const expectedFallbackIntent: QueryIntent = { filters: emptyFilters, semantic_query: 'raw fallback query' };
-    expect(retrieveCandidatesMock).toHaveBeenCalledWith(pool, expectedFallbackIntent, null);
+    expect(retrieveCandidatesMock).toHaveBeenCalledWith(pool, expectedFallbackIntent, null, undefined);
     expect(rerankMock).toHaveBeenCalledWith('raw fallback query', candidates, null);
     expect(logEntry.extracted_intent).toEqual(expectedFallbackIntent);
     expect(logEntry.model_calls.query_understanding.succeeded).toBe(false);

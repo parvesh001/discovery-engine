@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import pg from 'pg';
 import { seedDatabase } from './seed.js';
-import { seedListings } from './seed-data.js';
+import { evalSeedListings } from './seed-eval-data.js';
 import { getTestDatabaseUrl } from '../test/testDb.js';
 
 describe('seedDatabase', () => {
@@ -41,8 +41,8 @@ describe('seedDatabase', () => {
   });
 
   it('accepts an injected listing set for isolated testing', async () => {
-    const [firstListing] = seedListings;
-    if (!firstListing) throw new Error('seedListings is empty — cannot run this test');
+    const [firstListing] = evalSeedListings;
+    if (!firstListing) throw new Error('evalSeedListings is empty — cannot run this test');
     const count = await seedDatabase(pool, [firstListing]);
 
     expect(count).toBe(1);

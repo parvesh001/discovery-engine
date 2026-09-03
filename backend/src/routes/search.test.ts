@@ -108,9 +108,26 @@ describe('POST /api/search', () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(sampleResponse);
-    expect(runSearchMock).toHaveBeenCalledWith(pool, 'cozy cabin', redis);
+    expect(runSearchMock).toHaveBeenCalledWith(pool, 'cozy cabin', redis, undefined);
 
     await vi.waitFor(() => expect(logSearchMock).toHaveBeenCalledWith(pool, sampleLogEntry));
+  });
+
+  it('threads a valid destination through to runSearch (spec 12)', async () => {
+    runSearchMock.mockResolvedValue({ response: sampleResponse, logEntry: sampleLogEntry });
+
+    const response = await request(app).post('/api/search').send({ query: 'cozy cabin', destination: 'goa' });
+
+    expect(response.status).toBe(200);
+    expect(runSearchMock).toHaveBeenCalledWith(pool, 'cozy cabin', redis, 'goa');
+  });
+
+  it('returns 400 for an unknown destination slug and does not call runSearch', async () => {
+    const response = await request(app).post('/api/search').send({ query: 'cozy cabin', destination: 'mumbai' });
+
+    expect(response.status).toBe(400);
+    expect(typeof response.body.error).toBe('string');
+    expect(runSearchMock).not.toHaveBeenCalled();
   });
 
   it('returns 400 for an empty query', async () => {
@@ -184,7 +201,7 @@ describe('GET /api/search/naive', () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ results: [sampleListing] });
-    expect(naiveSearchListingsMock).toHaveBeenCalledWith(pool, 'cabin');
+    expect(naiveSearchListingsMock).toHaveBeenCalledWith(pool, 'cabin', undefined);
   });
 
   it('passes literal % and _ through to the service unescaped by the route itself', async () => {
@@ -193,7 +210,23 @@ describe('GET /api/search/naive', () => {
     const response = await request(app).get('/api/search/naive').query({ q: '50%_off' });
 
     expect(response.status).toBe(200);
-    expect(naiveSearchListingsMock).toHaveBeenCalledWith(pool, '50%_off');
+    expect(naiveSearchListingsMock).toHaveBeenCalledWith(pool, '50%_off', undefined);
+  });
+
+  it('threads a valid destination through to the service (spec 12)', async () => {
+    naiveSearchListingsMock.mockResolvedValue([sampleListing]);
+
+    const response = await request(app).get('/api/search/naive').query({ q: 'cabin', destination: 'goa' });
+
+    expect(response.status).toBe(200);
+    expect(naiveSearchListingsMock).toHaveBeenCalledWith(pool, 'cabin', 'goa');
+  });
+
+  it('returns 400 for an unknown destination slug and does not call the service', async () => {
+    const response = await request(app).get('/api/search/naive').query({ q: 'cabin', destination: 'mumbai' });
+
+    expect(response.status).toBe(400);
+    expect(naiveSearchListingsMock).not.toHaveBeenCalled();
   });
 
   it('returns 400 for a missing q', async () => {

@@ -65,6 +65,7 @@ describe('retrieveCandidates', () => {
     extracted_attributes?: ExtractedAttributes;
     embedding?: number[] | null;
     ingestion_status?: string;
+    destination?: string | null;
   }): Promise<void> {
     const row = {
       price_per_night: 100,
@@ -75,14 +76,15 @@ describe('retrieveCandidates', () => {
       extracted_attributes: baseAttributes,
       embedding: oneHot(0) as number[] | null,
       ingestion_status: 'processed',
+      destination: null as string | null,
       ...overrides,
     };
     const embeddingLiteral = row.embedding ? `[${row.embedding.join(',')}]` : null;
 
     await pool.query(
       `INSERT INTO listings (title, raw_description, price_per_night, bedrooms, location, latitude, longitude,
-                              extracted_attributes, embedding, ingestion_status)
-       VALUES ($1, 'A test listing description.', $2, $3, $7, $8, $9, $4, $5::vector, $6)`,
+                              extracted_attributes, embedding, ingestion_status, destination)
+       VALUES ($1, 'A test listing description.', $2, $3, $7, $8, $9, $4, $5::vector, $6, $10)`,
       [
         row.title,
         row.price_per_night,
@@ -93,6 +95,7 @@ describe('retrieveCandidates', () => {
         row.location,
         row.latitude,
         row.longitude,
+        row.destination,
       ],
     );
   }
@@ -389,6 +392,64 @@ describe('retrieveCandidates', () => {
 
       expect(result.filtersRelaxed).toBe(false);
       expect(result.candidates).toHaveLength(0);
+    });
+  });
+
+  describe('destination scope (spec 12)', () => {
+    it('returns only in-scope rows and never crosses destinations', async () => {
+      await insertListing({ title: 'Manali A', destination: 'manali' });
+      await insertListing({ title: 'Manali B', destination: 'manali' });
+      await insertListing({ title: 'Goa A', destination: 'goa' });
+      await insertListing({ title: 'Unscoped', destination: null });
+
+      const result = await retrieveCandidates(
+        pool,
+        { filters: emptyFilters, semantic_query: 'a place to stay' },
+        undefined,
+        'manali',
+      );
+
+      expect(result.candidates.map((c) => c.title).sort()).toEqual(['Manali A', 'Manali B']);
+    });
+
+    it('survives filter relaxation — the relaxed hard-only pass is still destination-scoped', async () => {
+      // In-scope + pet_friendly, but location filter matches nothing → relaxation fires.
+      await insertListing({
+        title: 'Manali Pet OK',
+        destination: 'manali',
+        location: 'Old Manali',
+        extracted_attributes: { ...baseAttributes, pet_friendly: true },
+      });
+      // Would rank in on semantics + pet_friendly if scope leaked, but it is in Goa.
+      await insertListing({
+        title: 'Goa Pet OK',
+        destination: 'goa',
+        location: 'Anjuna',
+        extracted_attributes: { ...baseAttributes, pet_friendly: true },
+      });
+
+      const result = await retrieveCandidates(
+        pool,
+        {
+          filters: { ...emptyFilters, pet_friendly: true, location: 'Nonexistent Sub-Area' },
+          semantic_query: 'a place to stay',
+        },
+        undefined,
+        'manali',
+      );
+
+      expect(result.filtersRelaxed).toBe(true);
+      expect(result.candidates.map((c) => c.title)).toEqual(['Manali Pet OK']);
+    });
+
+    it('with no scope passed, behaves exactly as before (all destinations visible)', async () => {
+      await insertListing({ title: 'Manali A', destination: 'manali' });
+      await insertListing({ title: 'Goa A', destination: 'goa' });
+      await insertListing({ title: 'Unscoped', destination: null });
+
+      const result = await retrieveCandidates(pool, { filters: emptyFilters, semantic_query: 'anything' });
+
+      expect(result.candidates.map((c) => c.title).sort()).toEqual(['Goa A', 'Manali A', 'Unscoped']);
     });
   });
 });

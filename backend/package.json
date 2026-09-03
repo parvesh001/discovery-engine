@@ -16,6 +16,7 @@
     "migrate:down": "node-pg-migrate down",
     "migrate:create": "node-pg-migrate create -j sql --",
     "seed": "tsx src/scripts/seed.ts",
+    "seed:demo": "tsx src/scripts/seed-demo.ts",
     "ingest": "tsx src/scripts/ingest.ts",
     "ingest:worker": "tsx src/scripts/ingest-worker.ts",
     "test:query-understanding": "tsx src/scripts/testQueryUnderstanding.ts",

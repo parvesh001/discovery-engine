@@ -1,7 +1,8 @@
 import type pg from 'pg';
 import { loadEnv, type Env } from '../env.js';
 import { createPool } from '../db.js';
-import { seedListings, type SeedListing } from './seed-data.js';
+import { evalSeedListings } from './seed-eval-data.js';
+import type { SeedListing } from './seedTypes.js';
 
 const COLUMNS_PER_ROW = 7;
 
@@ -39,7 +40,7 @@ export function buildInsertQuery(listings: SeedListing[]): { text: string; value
   return { text, values };
 }
 
-export async function seedDatabase(pool: pg.Pool, listings: SeedListing[] = seedListings): Promise<number> {
+export async function seedDatabase(pool: pg.Pool, listings: SeedListing[] = evalSeedListings): Promise<number> {
   const client = await pool.connect();
 
   try {
