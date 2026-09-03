@@ -124,7 +124,7 @@ export function PipelineTrace(props: PipelineTraceProps) {
                   ].join(' ')}
                 />
               )}
-              <li className="flex items-center gap-2 sm:flex-1 sm:flex-col sm:items-center sm:gap-1 sm:text-center">
+              <li className="flex items-center gap-2 sm:flex-col sm:items-center sm:gap-1 sm:text-center">
                 <span
                   className={`flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full ring-1 ${bezelRing}`}
                 >
