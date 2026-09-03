@@ -26,8 +26,8 @@ export function DestinationPicker({ value, onSelect }: DestinationPickerProps) {
               key={destination.slug}
               className={`cursor-pointer rounded-md border px-4 py-2 font-heading text-sm font-semibold transition-colors ${
                 selected
-                  ? 'border-flare bg-flare text-graphite'
-                  : 'border-hairline bg-panel text-signal hover:border-flare/60'
+                  ? 'border-edge bg-signal text-graphite'
+                  : 'border-hairline bg-panel text-signal hover:border-edge'
               }`}
             >
               <input
