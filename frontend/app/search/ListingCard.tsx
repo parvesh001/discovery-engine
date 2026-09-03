@@ -29,7 +29,7 @@ function RelevanceMeter({ score }: { score: number }) {
   const pct = Math.round(score * 100);
   return (
     <div className="mt-2 flex items-center gap-2">
-      <span className="font-mono text-[10px] uppercase tracking-wider text-mist-dim">Rel</span>
+      <span className="font-mono text-[10px] uppercase tracking-wider text-mist-dim">Relevance</span>
       <span
         role="meter"
         aria-label="Relevance score"
