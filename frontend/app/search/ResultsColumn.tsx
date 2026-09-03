@@ -37,7 +37,7 @@ const CHANNEL: Record<'naive' | 'ai', { glyph: string; chip: string; subheading:
     subheadingClass: 'text-flare',
   },
   naive: {
-    glyph: '▢',
+    glyph: '◇',
     chip: 'bg-probe/10 text-probe',
     subheading: 'SUBSTRING MATCH · NO RANKING',
     subheadingClass: 'text-mist',
