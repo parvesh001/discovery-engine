@@ -22,9 +22,26 @@ type ResultsColumnProps = {
   degraded?: boolean;
 };
 
-const SUBHEADING: Record<'naive' | 'ai', string> = {
-  naive: 'SUBSTRING MATCH · NO RANKING',
-  ai: 'SEMANTIC + RERANK',
+/**
+ * Channel identity for the two columns. The glyph shape (filled vs hollow) and the colour
+ * (`flare` = the live pipeline, `probe` = the unaided baseline) are two redundant carriers
+ * of the same "which engine" signal — neither is load-bearing alone. The subheading colour
+ * echoes the channel; it stays a static label, never an alarm colour, since it is always
+ * on screen. The "came up short" read is carried separately by the empty-state block below.
+ */
+const CHANNEL: Record<'naive' | 'ai', { glyph: string; chip: string; subheading: string; subheadingClass: string }> = {
+  ai: {
+    glyph: '◆',
+    chip: 'bg-flare-dim text-flare',
+    subheading: 'SEMANTIC + RERANK',
+    subheadingClass: 'text-flare',
+  },
+  naive: {
+    glyph: '◇',
+    chip: 'bg-probe/10 text-probe',
+    subheading: 'SUBSTRING MATCH · NO RANKING',
+    subheadingClass: 'text-mist',
+  },
 };
 
 export function ResultsColumn({
@@ -39,17 +56,22 @@ export function ResultsColumn({
   trace,
   filtersRelaxed,
 }: ResultsColumnProps) {
-  const dotColor = variant === 'ai' ? 'bg-flare' : 'bg-mist';
+  const channel = CHANNEL[variant];
 
   return (
     <section aria-labelledby={`${id}-heading`} className="flex flex-col">
       <div className="flex items-center gap-2">
-        <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} aria-hidden="true" />
+        <span
+          aria-hidden="true"
+          className={`flex h-5 w-5 items-center justify-center rounded font-mono text-[11px] ${channel.chip}`}
+        >
+          {channel.glyph}
+        </span>
         <h2 id={`${id}-heading`} className="font-heading text-lg font-semibold text-signal">
           {heading}
         </h2>
       </div>
-      <p className="mt-0.5 font-mono text-[10px] tracking-wider text-mist">{SUBHEADING[variant]}</p>
+      <p className={`mt-0.5 font-mono text-[10px] tracking-wider ${channel.subheadingClass}`}>{channel.subheading}</p>
 
       {trace && <div className="mt-3">{trace}</div>}
 
@@ -62,7 +84,7 @@ export function ResultsColumn({
       {status === 'success' && (
         <>
           {filtersRelaxed && (
-            <p className="mt-3 rounded-md bg-flare/10 px-3 py-2 text-sm text-flare">
+            <p className="mt-3 rounded-md bg-flare-dim px-3 py-2 text-sm text-flare">
               Showing broader results — we loosened the location/property-type match to avoid an
               empty page. Your other requirements (like pets, budget, and bedrooms) are still
               applied.
@@ -78,8 +100,17 @@ export function ResultsColumn({
                 />
               ))}
             </ul>
+          ) : variant === 'naive' ? (
+            // The naive column coming up short is the demo's whole point — mark it as a
+            // measured shortfall (`fault`), not a system error (still `red-400` elsewhere).
+            <div className="mt-3 flex items-start gap-2 rounded-md border-y border-r border-hairline border-l-2 border-l-fault bg-panel px-3 py-2">
+              <span aria-hidden="true" className="font-mono text-fault">
+                ✗
+              </span>
+              <p className="font-mono text-sm text-mist">{emptyMessage}</p>
+            </div>
           ) : (
-            <p className="mt-3 font-mono text-sm text-mist">{emptyMessage}</p>
+            <p className="mt-3 text-sm text-mist">{emptyMessage}</p>
           )}
         </>
       )}

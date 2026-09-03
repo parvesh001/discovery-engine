@@ -12,6 +12,40 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
+/** Left-edge channel rule — which engine produced this card. `browse` is not a comparison, so it stays neutral. */
+const CHANNEL_RULE: Record<'naive' | 'ai' | 'browse', string> = {
+  ai: 'border-l-flare',
+  naive: 'border-l-probe',
+  browse: 'border-l-hairline',
+};
+
+/**
+ * Visual relevance readout for AI-pipeline cards: a matte bar plus the exact percentage.
+ * The shape lands faster than the number alone; the number stays for precision. Only ever
+ * rendered when `relevanceScore` is a real number (the caller's `!== undefined` guard
+ * covers both `null` and absent), so there is no zero-width bar.
+ */
+function RelevanceMeter({ score }: { score: number }) {
+  const pct = Math.round(score * 100);
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <span className="font-mono text-[10px] uppercase tracking-wider text-mist-dim">Relevance</span>
+      <span
+        role="meter"
+        aria-label="Relevance score"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        className="relative h-1.5 w-24 overflow-hidden rounded-sm bg-well ring-1 ring-inset ring-hairline"
+      >
+        <span aria-hidden="true" className="absolute inset-y-0 left-1/2 w-px bg-edge" />
+        <span aria-hidden="true" className="absolute inset-y-0 left-0 bg-flare" style={{ width: `${pct}%` }} />
+      </span>
+      <span className="font-mono text-xs text-signal">{pct}%</span>
+    </div>
+  );
+}
+
 /**
  * Accepts a loosely-typed record rather than the `Listing` type: the top-level response
  * guard (types.ts) only checks that `results` is an array, not that every item inside it
@@ -57,7 +91,7 @@ export function ListingCard({
     .slice(0, 4);
 
   return (
-    <li className="rounded-lg border border-hairline bg-panel p-4">
+    <li className={`rounded-lg border-y border-r border-hairline border-l-2 ${CHANNEL_RULE[variant]} bg-panel p-4`}>
       <h3 className="font-heading font-semibold text-signal">{title}</h3>
       <div className="mt-1 flex flex-wrap gap-x-3 text-sm">
         {price !== undefined && <span className="font-mono text-mist">${price}/night</span>}
@@ -67,15 +101,13 @@ export function ListingCard({
       {chips.length > 0 && (
         <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Matched attributes">
           {chips.map((chip) => (
-            <li key={chip} className="rounded-full bg-flare/10 px-2 py-0.5 text-xs text-flare">
+            <li key={chip} className="rounded-full bg-flare-dim px-2 py-0.5 text-xs text-flare">
               {chip}
             </li>
           ))}
         </ul>
       )}
-      {relevanceScore !== undefined && (
-        <p className="mt-2 font-mono text-xs text-flare">Relevance: {(relevanceScore * 100).toFixed(0)}%</p>
-      )}
+      {relevanceScore !== undefined && <RelevanceMeter score={relevanceScore} />}
     </li>
   );
 }

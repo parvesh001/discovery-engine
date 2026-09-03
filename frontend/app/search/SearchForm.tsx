@@ -33,7 +33,7 @@ export function SearchForm({ value, onChange, onSubmit, disabled }: SearchFormPr
       <button
         type="submit"
         disabled={disabled}
-        className="rounded-md bg-flare px-4 py-2 font-heading text-sm font-semibold text-graphite hover:bg-flare/90 disabled:cursor-not-allowed disabled:opacity-50"
+        className="rounded-md bg-flare px-4 py-2 font-heading text-sm font-semibold text-graphite hover:bg-flare/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-flare focus-visible:ring-offset-2 focus-visible:ring-offset-graphite disabled:cursor-not-allowed disabled:opacity-50"
       >
         Search
       </button>
