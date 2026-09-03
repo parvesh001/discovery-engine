@@ -89,7 +89,7 @@ export function SearchExperience() {
                   ai.status === 'loading' ? (
                     <PipelineTrace status="loading" stage={ai.stage} />
                   ) : ai.status === 'success' ? (
-                    <PipelineTrace status="success" timing={ai.data.timing} />
+                    <PipelineTrace status="success" timing={ai.data.timing} degraded={ai.data.degraded} />
                   ) : undefined
                 }
               />
