@@ -31,6 +31,14 @@ export function SearchExperience() {
           <SearchForm value={query} onChange={setQuery} onSubmit={() => submit(query)} disabled={isLoading} />
         </div>
 
+        {/* Instrumentation rule: the active scope bound is always on screen, in both modes.
+            Decorative — the scope is also stated in the browse heading and the compare copy. */}
+        <div className="mt-3 flex items-center gap-3" aria-hidden="true">
+          <span className="h-px flex-1 bg-hairline" />
+          <span className="font-mono text-[10px] uppercase tracking-wider text-mist-dim">Scope: {label}</span>
+          <span className="h-px flex-1 bg-hairline" />
+        </div>
+
         {mode === 'browse' && (
           <div className="mt-6">
             <BrowseResults destination={destination} state={browse} />
@@ -40,7 +48,11 @@ export function SearchExperience() {
         {mode === 'compare' && (
           <>
             <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1">
-              <button type="button" onClick={backToBrowse} className="text-xs font-medium text-flare hover:underline">
+              <button
+                type="button"
+                onClick={backToBrowse}
+                className="text-xs font-medium text-mist underline decoration-hairline underline-offset-4 hover:text-signal hover:decoration-signal"
+              >
                 &larr; Back to all {label} stays
               </button>
               <span className="text-sm text-mist">
